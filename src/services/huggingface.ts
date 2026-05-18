@@ -1,4 +1,4 @@
-import type { HfFile } from '../types.js';
+import type { HfFile, ModelMetadata } from '../types.js';
 import { calculateFit } from './memory.js';
 import { fetchGgufMetadata } from './gguf.js';
 
@@ -6,6 +6,30 @@ interface HfTreeEntry {
   type: string;
   path: string;
   size: number;
+}
+
+function extractQuantFromPath(path: string): string | undefined {
+  const fileName = path.split('/').pop() || path;
+  const base = fileName.replace(/\.gguf$/i, '');
+  const match = base.match(/[-_]((?:UD[-_])?(?:I?Q\d[-_\w]*|[BF]F?\d+\w*|Q\d[-_\w]*))$/i);
+  return match?.[1]?.replace(/-/g, '_');
+}
+
+function metadataForFile(baseMetadata: ModelMetadata | null, filePath: string): ModelMetadata | undefined {
+  const primaryQuantType = extractQuantFromPath(filePath);
+  if (baseMetadata) {
+    return {
+      ...baseMetadata,
+      quantTypes: undefined,
+      primaryQuantType: primaryQuantType ?? baseMetadata.primaryQuantType,
+    };
+  }
+  if (!primaryQuantType) return undefined;
+  return {
+    primaryQuantType,
+    metadataSource: 'estimated',
+    isEstimated: true,
+  };
 }
 
 export async function listGgufFiles(
@@ -40,19 +64,18 @@ export async function listGgufFiles(
   const metadata = ggufFiles.length > 0
     ? await fetchGgufMetadata(repo, ggufFiles[0].path).catch(() => null)
     : null;
-  const totalLayers = metadata?.blockCount;
-
   return ggufFiles.map(entry => {
-    const fit = calculateFit(entry.size, contextTokens, vramMb, ramMb, totalLayers);
+    const fileMetadata = metadataForFile(metadata, entry.path);
+    const fit = calculateFit(entry.size, contextTokens, vramMb, ramMb, fileMetadata);
     return {
       path: entry.path,
       sizeBytes: entry.size,
       sizeGb: parseFloat((entry.size / (1024 ** 3)).toFixed(1)),
-      estimatedLayers: fit.estimatedLayers,
-      totalLayers: fit.totalLayers,
+      metadata: fileMetadata,
       kvCacheMb: fit.kvCacheMb,
       totalNeededMb: fit.totalNeededMb,
       fitStatus: fit.fitStatus,
+      fitEstimated: fit.isEstimated,
     };
   });
 }

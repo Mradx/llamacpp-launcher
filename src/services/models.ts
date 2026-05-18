@@ -1,6 +1,7 @@
 import { readdirSync, statSync, existsSync, lstatSync, readlinkSync, unlinkSync, rmSync } from 'node:fs';
 import { join, basename, dirname, resolve } from 'node:path';
 import type { LocalModel } from '../types.js';
+import { readGgufMetadata } from './gguf.js';
 
 function walkForGguf(dir: string): string[] {
   const results: string[] = [];
@@ -61,12 +62,15 @@ export async function scanLocalModels(hfCachePath: string): Promise<LocalModel[]
 
     for (const filePath of ggufFiles) {
       let sizeBytes = 0;
+      let metadata;
       try { sizeBytes = statSync(filePath).size; } catch {}
+      try { metadata = readGgufMetadata(filePath) ?? undefined; } catch {}
       models.push({
         path: filePath,
         fileName: basename(filePath),
         repoId,
         sizeBytes,
+        metadata,
       });
     }
   }

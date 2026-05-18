@@ -3,8 +3,9 @@ import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { calculateLayerSplit, calculateMaxGpuLayers } from '../services/memory.js';
-import { formatMb } from '../utils/format.js';
+import { formatMb, formatNumber } from '../utils/format.js';
 import { theme, usageColor } from '../theme.js';
+import type { ModelMetadata } from '../types.js';
 
 interface LayerPreset {
   name: string;
@@ -15,6 +16,8 @@ interface LayerSelectProps {
   totalLayers: number;
   modelSizeMb: number;
   kvCacheMb: number;
+  kvCacheEstimated: boolean;
+  metadata?: ModelMetadata;
   vramMb: number;
   ramMb: number;
   onSelect: (gpuLayers: number) => void;
@@ -92,7 +95,33 @@ function SplitPreview({ totalLayers, modelSizeMb, kvCacheMb, gpuLayers, vramMb, 
   );
 }
 
-export function LayerSelect({ totalLayers, modelSizeMb, kvCacheMb, vramMb, ramMb, onSelect, onBack }: LayerSelectProps) {
+function buildLayerSubtitle(
+  totalLayers: number,
+  modelSizeMb: number,
+  kvCacheMb: number,
+  kvCacheEstimated: boolean,
+  metadata?: ModelMetadata
+): string {
+  const parts = [`${totalLayers} layers${metadata?.isEstimated ? ' estimated' : ''}`];
+  if (metadata?.contextLength) {
+    parts.push(`train ctx ${formatNumber(metadata.contextLength)}`);
+  }
+  if (metadata?.attentionHeadCountKv && metadata.attentionHeadCount) {
+    const kvHeads = metadata.attentionHeadCountKvByLayer;
+    if (kvHeads?.length) {
+      const minKv = Math.min(...kvHeads);
+      const maxKv = Math.max(...kvHeads);
+      parts.push(`GQA ${minKv === maxKv ? minKv : `${minKv}-${maxKv}`}/${metadata.attentionHeadCount}`);
+    } else {
+      parts.push(`GQA ${metadata.attentionHeadCountKv.toFixed(metadata.attentionHeadCountKv % 1 === 0 ? 0 : 1)}/${metadata.attentionHeadCount}`);
+    }
+  }
+  parts.push(`${formatMb(modelSizeMb)} model`);
+  parts.push(`${formatMb(kvCacheMb)} KV cache${kvCacheEstimated ? ' estimated' : ''}`);
+  return parts.join(' │ ');
+}
+
+export function LayerSelect({ totalLayers, modelSizeMb, kvCacheMb, kvCacheEstimated, metadata, vramMb, ramMb, onSelect, onBack }: LayerSelectProps) {
   const [mode, setMode] = useState<'presets' | 'custom'>('presets');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const maxGpu = calculateMaxGpuLayers(totalLayers, modelSizeMb, kvCacheMb, vramMb);
@@ -170,7 +199,7 @@ export function LayerSelect({ totalLayers, modelSizeMb, kvCacheMb, vramMb, ramMb
     <Box flexDirection="column">
       <Header
         title="GPU LAYERS"
-        subtitle={`${totalLayers} layers │ ${formatMb(modelSizeMb)} model │ ${formatMb(kvCacheMb)} KV cache`}
+        subtitle={buildLayerSubtitle(totalLayers, modelSizeMb, kvCacheMb, kvCacheEstimated, metadata)}
       />
 
       <Box flexDirection="column" marginLeft={2}>

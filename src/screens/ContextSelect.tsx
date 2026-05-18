@@ -4,14 +4,14 @@ import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { formatNumber } from '../utils/format.js';
 import { calculateFit } from '../services/memory.js';
-import type { FitStatus, HardwareInfo } from '../types.js';
+import type { FitStatus, HardwareInfo, ModelMetadata } from '../types.js';
 import { fitStatusColor, theme } from '../theme.js';
 
 interface ContextSelectProps {
   options: number[];
   defaultContext: number;
   modelSizeBytes?: number;
-  totalLayers?: number;
+  metadata?: ModelMetadata;
   hardware?: HardwareInfo | null;
   onSelect: (ctx: number) => void;
   onBack: () => void;
@@ -34,7 +34,7 @@ function fitLabel(status: FitStatus): string {
   }
 }
 
-export function ContextSelect({ options, defaultContext, modelSizeBytes, totalLayers, hardware, onSelect, onBack }: ContextSelectProps) {
+export function ContextSelect({ options, defaultContext, modelSizeBytes, metadata, hardware, onSelect, onBack }: ContextSelectProps) {
   const defaultIdx = options.indexOf(defaultContext);
   const [selectedIndex, setSelectedIndex] = useState(defaultIdx >= 0 ? defaultIdx : 2);
 
@@ -66,8 +66,9 @@ export function ContextSelect({ options, defaultContext, modelSizeBytes, totalLa
 
           let fit: ReturnType<typeof calculateFit> | null = null;
           if (canShowFit) {
-            fit = calculateFit(modelSizeBytes!, ctx, hardware!.vramMb, hardware!.ramMb, totalLayers);
+            fit = calculateFit(modelSizeBytes!, ctx, hardware!.vramMb, hardware!.ramMb, metadata);
           }
+          const exceedsTrainContext = !!(metadata?.contextLength && ctx > metadata.contextLength);
 
           return (
             <Box key={ctx}>
@@ -87,6 +88,11 @@ export function ContextSelect({ options, defaultContext, modelSizeBytes, totalLa
               <Box width={18}>
                 <Text dimColor>  ({desc}){isDefault ? ' ★' : ''}</Text>
               </Box>
+              {exceedsTrainContext && (
+                <Box width={8}>
+                  <Text color={theme.warning} bold={isSelected}>  RISKY</Text>
+                </Box>
+              )}
               {fit && (
                 <Text color={fitStatusColor(fit.fitStatus)} bold={isSelected}>
                   {'  '}{fitLabel(fit.fitStatus)}

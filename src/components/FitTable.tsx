@@ -48,6 +48,7 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
         const isSelected = i === selectedIndex;
         const fileName = file.path.split('/').pop() || file.path;
         const { baseName, quant } = extractQuant(fileName);
+        const quantLabel = file.metadata?.primaryQuantType || quant;
 
         return (
           <Box key={file.path}>
@@ -62,8 +63,8 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
               </Text>
             </Box>
             <Box width={16}>
-              <Text color={theme.accent} bold={isSelected}>
-                {quant}
+              <Text color={isSelected ? 'white' : undefined} bold={isSelected}>
+                {quantLabel}
               </Text>
             </Box>
             <Box width={10}>

@@ -9,7 +9,7 @@ import { TitleBlock } from '../components/TitleBlock.js';
 import { CONTENT_MARGIN_X, PAGE_MARGIN_X } from '../layout.js';
 import { formatSize } from '../utils/format.js';
 import { getSiblingModels } from '../services/models.js';
-import type { LocalModel, ModelSelection } from '../types.js';
+import type { LocalModel, ModelMetadata, ModelSelection } from '../types.js';
 import { theme } from '../theme.js';
 
 interface ModelSelectProps {
@@ -19,6 +19,17 @@ interface ModelSelectProps {
   onSelect: (model: ModelSelection) => void;
   onDelete: (model: LocalModel) => void;
   onQuit: () => void;
+}
+
+function metadataSummary(metadata?: ModelMetadata): string {
+  if (!metadata) return 'metadata estimated';
+  return [
+    metadata.architecture,
+    metadata.sizeLabel,
+    metadata.primaryQuantType,
+    metadata.blockCount ? `${metadata.blockCount} layers` : undefined,
+    metadata.isEstimated ? 'estimated' : undefined,
+  ].filter(Boolean).join(' · ');
 }
 
 export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, onQuit }: ModelSelectProps) {
@@ -55,7 +66,8 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
         onSelect({
           mode: 'local',
           path: model.path,
-          label: model.fileName.replace('.gguf', ''),
+          label: model.metadata?.name || model.fileName.replace('.gguf', ''),
+          metadata: model.metadata,
         });
       } else {
         setShowHfInput(true);
@@ -107,12 +119,13 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
                     </Text>
                   </Box>
                   <Text color={i === selectedIndex ? 'white' : theme.textMuted} bold={i === selectedIndex}>
-                    {model.repoId}
+                    {model.metadata?.name || model.repoId}
                   </Text>
                 </Box>
                 <Box marginLeft={8}>
                   <Text dimColor>{model.fileName}</Text>
                   <Text color={theme.accentMuted}>  {formatSize(model.sizeBytes)}</Text>
+                  {model.metadata && <Text dimColor>  {metadataSummary(model.metadata)}</Text>}
                 </Box>
               </Box>
             ))}

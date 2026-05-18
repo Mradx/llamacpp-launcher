@@ -36,6 +36,13 @@ export function launchServer(result: SelectionResult): void {
 
   row('Model', selection.model.label);
   row('Engine', config.serverExe);
+  if (selection.metadata) {
+    const m = selection.metadata;
+    if (m.architecture) row('Architecture', m.architecture);
+    if (m.blockCount) row('Layers', `${m.blockCount}${m.isEstimated ? ' (estimated)' : ''}`);
+    if (m.contextLength) row('Train ctx', formatNumber(m.contextLength));
+    if (m.primaryQuantType) row('Quant', m.primaryQuantType);
+  }
 
   if (hardware) {
     row('GPU', `${hardware.gpuName} │ ${formatMb(hardware.vramMb)}`);

@@ -1,4 +1,6 @@
-import type { FitStatus } from '../types.js';
+import type { FitStatus, ModelMetadata } from '../types.js';
+
+const DEFAULT_KV_BYTES_PER_ELEMENT = 2;
 
 export function estimateLayers(sizeGb: number): number {
   if (sizeGb < 5) return 28;
@@ -10,16 +12,73 @@ export function estimateLayers(sizeGb: number): number {
 }
 
 export interface FitResult {
-  estimatedLayers: number;
   totalLayers: number;
   kvCacheMb: number;
+  kvCacheEstimated: boolean;
   totalNeededMb: number;
   fitStatus: FitStatus;
+  metadata: ModelMetadata;
+  isEstimated: boolean;
 }
 
-export function calculateKvCacheMb(contextTokens: number, layers: number): number {
+export interface KvCacheResult {
+  totalLayers: number;
+  kvCacheMb: number;
+  isEstimated: boolean;
+}
+
+export function estimateModelMetadata(fileSizeBytes: number): ModelMetadata {
+  return {
+    blockCount: estimateLayers(fileSizeBytes / (1024 ** 3)),
+    metadataSource: 'estimated',
+    isEstimated: true,
+  };
+}
+
+export function getEffectiveMetadata(metadata: ModelMetadata | undefined, fileSizeBytes: number): ModelMetadata {
+  return metadata ?? estimateModelMetadata(fileSizeBytes);
+}
+
+export function calculateKvCache(contextTokens: number, metadata: ModelMetadata | undefined, fileSizeBytes: number): KvCacheResult {
+  const effective = getEffectiveMetadata(metadata, fileSizeBytes);
+  const layers = effective.blockCount ?? estimateLayers(fileSizeBytes / (1024 ** 3));
+  const hasAttentionShape = !!(
+    effective.embeddingLength &&
+    effective.attentionHeadCount &&
+    effective.attentionHeadCountKv
+  );
+
+  if (hasAttentionShape) {
+    const headDim = effective.embeddingLength! / effective.attentionHeadCount!;
+    let kvHeadLayerTotal = layers * effective.attentionHeadCountKv!;
+    if (effective.attentionHeadCountKvByLayer?.length) {
+      const layerHeadSum = effective.attentionHeadCountKvByLayer.reduce((sum, count) => sum + count, 0);
+      kvHeadLayerTotal = effective.attentionHeadCountKvByLayer.length === layers
+        ? layerHeadSum
+        : (layerHeadSum / effective.attentionHeadCountKvByLayer.length) * layers;
+    }
+    const kvBytes = contextTokens
+      * kvHeadLayerTotal
+      * headDim
+      * 2
+      * DEFAULT_KV_BYTES_PER_ELEMENT;
+    return {
+      totalLayers: layers,
+      kvCacheMb: Math.floor(kvBytes / (1024 * 1024)),
+      isEstimated: true,
+    };
+  }
+
   const kvBytesPerToken = 4096 * layers;
-  return Math.floor((contextTokens * kvBytesPerToken) / (1024 * 1024));
+  return {
+    totalLayers: layers,
+    kvCacheMb: Math.floor((contextTokens * kvBytesPerToken) / (1024 * 1024)),
+    isEstimated: true,
+  };
+}
+
+export function calculateKvCacheMb(contextTokens: number, metadata: ModelMetadata | undefined, fileSizeBytes: number): number {
+  return calculateKvCache(contextTokens, metadata, fileSizeBytes).kvCacheMb;
 }
 
 export interface LayerSplit {
@@ -76,14 +135,13 @@ export function calculateFit(
   contextTokens: number,
   vramMb: number,
   ramMb: number,
-  totalLayers?: number
+  metadata?: ModelMetadata
 ): FitResult {
-  const sizeGb = fileSizeBytes / (1024 ** 3);
   const sizeMb = Math.floor(fileSizeBytes / (1024 * 1024));
-  const layers = totalLayers ?? estimateLayers(sizeGb);
-
-  const kvBytesPerToken = 4096 * layers;
-  const kvMb = Math.floor((contextTokens * kvBytesPerToken) / (1024 * 1024));
+  const effective = getEffectiveMetadata(metadata, fileSizeBytes);
+  const kv = calculateKvCache(contextTokens, effective, fileSizeBytes);
+  const layers = kv.totalLayers;
+  const kvMb = kv.kvCacheMb;
   const totalNeededMb = sizeMb + kvMb + 1500;
 
   const vramAvail = Math.floor(vramMb * 0.95);
@@ -100,5 +158,13 @@ export function calculateFit(
     fitStatus = 'TOO_BIG';
   }
 
-  return { estimatedLayers: layers, totalLayers: layers, kvCacheMb: kvMb, totalNeededMb, fitStatus };
+  return {
+    totalLayers: layers,
+    kvCacheMb: kvMb,
+    kvCacheEstimated: kv.isEstimated,
+    totalNeededMb,
+    fitStatus,
+    metadata: effective,
+    isEstimated: effective.isEstimated || kv.isEstimated,
+  };
 }

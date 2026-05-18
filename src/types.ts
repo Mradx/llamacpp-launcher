@@ -24,29 +24,55 @@ export interface NetworkInfo {
   localUrl: string;
 }
 
+export interface ModelMetadata {
+  architecture?: string;
+  name?: string;
+  baseName?: string;
+  sizeLabel?: string;
+  license?: string;
+  blockCount?: number;
+  contextLength?: number;
+  embeddingLength?: number;
+  feedForwardLength?: number;
+  attentionHeadCount?: number;
+  attentionHeadCountKv?: number;
+  attentionHeadCountKvByLayer?: number[];
+  ropeFreqBase?: number;
+  ropeDimensionCount?: number;
+  tokenizerModel?: string;
+  chatTemplate?: string;
+  bosTokenId?: number;
+  eosTokenId?: number;
+  quantTypes?: Record<string, number>;
+  primaryQuantType?: string;
+  metadataSource: 'local' | 'hf' | 'estimated';
+  isEstimated: boolean;
+}
+
 export interface LocalModel {
   path: string;
   fileName: string;
   repoId: string;
   sizeBytes: number;
+  metadata?: ModelMetadata;
 }
 
 export interface HfFile {
   path: string;
   sizeBytes: number;
   sizeGb: number;
-  estimatedLayers: number;
-  totalLayers: number;
+  metadata?: ModelMetadata;
   kvCacheMb: number;
   totalNeededMb: number;
   fitStatus: FitStatus;
+  fitEstimated: boolean;
 }
 
 export type FitStatus = 'GPU_OK' | 'PARTIAL' | 'RAM_OK' | 'TOO_BIG';
 
 export type ModelSelection =
-  | { mode: 'local'; path: string; label: string }
-  | { mode: 'hf'; repo: string; file?: string; label: string };
+  | { mode: 'local'; path: string; label: string; metadata?: ModelMetadata }
+  | { mode: 'hf'; repo: string; file?: string; label: string; metadata?: ModelMetadata };
 
 export interface ModelParams {
   temp?: number;
@@ -76,6 +102,7 @@ export interface ModelPreset {
 
 export interface FullSelection {
   model: ModelSelection;
+  metadata?: ModelMetadata;
   contextSize: number;
   gpuLayers: number;
   mtpEnabled: boolean;
