@@ -10,6 +10,7 @@ import { getProfiles, findPreset } from './services/presets.js';
 import { saveToHistory } from './services/params-history.js';
 import { loadTemplateOverride, saveTemplateOverride } from './services/template-overrides.js';
 import { calculateKvCache, estimateModelMetadata, getEffectiveMetadata } from './services/memory.js';
+import { useVersion } from './hooks/useVersion.js';
 import { fetchGgufMetadata } from './services/gguf.js';
 import { normalizeHfRef } from './utils/hf-url.js';
 import { ModelSelect } from './screens/ModelSelect.js';
@@ -42,7 +43,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [configVersion, setConfigVersion] = useState(0);
   const config = useMemo(() => loadConfig(), [configVersion]);
   const { hardware, network } = useHardware(config.port);
-  const { models, loading: modelsLoading, deleteModel } = useModels(config.hfCachePath);
+  const { models, loading: modelsLoading, deleteModel, refreshModels } = useModels(config.hfCachePath);
+  const { version } = useVersion(config.llamaCppDir);
   const { exit } = useApp();
 
   const [screen, setScreen] = useState<Screen>('model-select');
@@ -258,8 +260,10 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           models={models}
           loading={modelsLoading}
           hfCachePath={config.hfCachePath}
+          version={version}
           onSelect={handleModelSelect}
           onDelete={deleteModel}
+          onRefresh={refreshModels}
           onQuit={handleQuit}
           onSettings={handleSettings}
         />

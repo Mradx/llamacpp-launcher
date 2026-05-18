@@ -9,14 +9,17 @@ import { CONTENT_MARGIN_X, PAGE_MARGIN_X } from '../layout.js';
 import { formatSize } from '../utils/format.js';
 import { getSiblingModels } from '../services/models.js';
 import type { LocalModel, ModelMetadata, ModelSelection } from '../types.js';
+import type { VersionInfo } from '../services/llamacpp-version.js';
 import { theme } from '../theme.js';
 
 interface ModelSelectProps {
   models: LocalModel[];
   loading: boolean;
   hfCachePath: string;
+  version?: VersionInfo | null;
   onSelect: (model: ModelSelection) => void;
   onDelete: (model: LocalModel) => void;
+  onRefresh: () => void;
   onQuit: () => void;
   onSettings: () => void;
 }
@@ -36,7 +39,7 @@ function metadataSummary(metadata?: ModelMetadata, fileName?: string): string {
   ].filter(Boolean).join(' · ');
 }
 
-export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, onQuit, onSettings }: ModelSelectProps) {
+export function ModelSelect({ models, loading, hfCachePath, version, onSelect, onDelete, onRefresh, onQuit, onSettings }: ModelSelectProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showHfInput, setShowHfInput] = useState(false);
   const [hfInput, setHfInput] = useState('');
@@ -52,6 +55,11 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
 
   useInput((input, key) => {
     if (showHfInput || confirmDelete) return;
+
+    if (input === 'r' || input === 'R' || input === '\u043a' || input === '\u041a') {
+      onRefresh();
+      return;
+    }
 
     if (input === 'q' || input === 'Q' || input === 'й' || input === 'Й') {
       onQuit();
@@ -97,7 +105,7 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
 
   return (
     <Box flexDirection="column">
-      <Header title="LOCAL MODELS" />
+      <Header title="LOCAL MODELS" version={version} />
 
       <Box flexDirection="column" marginLeft={2} marginBottom={1}>
         <Box>
@@ -194,6 +202,7 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
           <KeyHint hints={[
             { key: '↑↓', label: 'navigate' },
             { key: '⏎', label: 'select' },
+            { key: 'r', label: loading ? 'refreshing' : 'refresh' },
             ...(selectedIndex < models.length ? [{ key: 'd', label: 'delete' }] : []),
             { key: 'q', label: 'quit' },
           ]} />

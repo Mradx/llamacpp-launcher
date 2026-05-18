@@ -28,5 +28,9 @@ export function useModels(hfCachePath: string) {
     setScanTrigger(n => n + 1);
   }, []);
 
-  return { models, loading, deleteModel };
+  const refreshModels = useCallback(() => {
+    setScanTrigger(n => n + 1);
+  }, []);
+
+  return { models, loading, deleteModel, refreshModels };
 }
