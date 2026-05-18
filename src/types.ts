@@ -46,21 +46,38 @@ export type ModelSelection =
   | { mode: 'local'; path: string; label: string }
   | { mode: 'hf'; repo: string; file?: string; label: string };
 
+export interface ModelParams {
+  temp?: number;
+  top_k?: number;
+  top_p?: number;
+  min_p?: number;
+  presence_penalty?: number;
+  frequency_penalty?: number;
+  repeat_penalty?: number;
+  top_n_sigma?: number;
+  dynatemp_range?: number;
+  mirostat?: number;
+  mirostat_tau?: number;
+  mirostat_eta?: number;
+}
+
+export interface ParamsProfile {
+  name: string;
+  params: ModelParams;
+}
+
+export interface ModelPreset {
+  match: string[];
+  name: string;
+  profiles: ParamsProfile[];
+}
+
 export interface FullSelection {
   model: ModelSelection;
   contextSize: number;
   mtpEnabled: boolean;
+  params: ModelParams | null;
+  rawArgs: string[];
 }
 
-export type Screen = 'model-select' | 'context-select' | 'quant-picker' | 'dashboard';
-
-export interface AppState {
-  screen: Screen;
-  hardware: HardwareInfo | null;
-  network: NetworkInfo | null;
-  localModels: LocalModel[];
-  selectedModel: ModelSelection | null;
-  contextSize: number;
-  serverStatus: 'idle' | 'starting' | 'running' | 'stopped' | 'error';
-  error: string | null;
-}
+export type Screen = 'model-select' | 'context-select' | 'quant-picker' | 'params-select' | 'custom-params' | 'expert-params';

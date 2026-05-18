@@ -44,6 +44,24 @@ export function launchServer(result: SelectionResult): void {
   row('Network', network?.lanUrl || 'unavailable');
   console.log('');
   console.log(`  ${dim(`Context ${formatNumber(selection.contextSize)} │ Layers ${config.gpuLayers} │ Slots ${config.parallelSlots} │ MTP ${selection.mtpEnabled ? 'on' : 'off'}`)}`);
+
+  if (selection.params) {
+    const p = selection.params;
+    const parts: string[] = [];
+    if (p.temp !== undefined) parts.push(`temp=${p.temp}`);
+    if (p.top_k !== undefined) parts.push(`top_k=${p.top_k}`);
+    if (p.top_p !== undefined) parts.push(`top_p=${p.top_p}`);
+    if (p.min_p !== undefined) parts.push(`min_p=${p.min_p}`);
+    if (p.presence_penalty !== undefined) parts.push(`pres_pen=${p.presence_penalty}`);
+    if (p.frequency_penalty !== undefined) parts.push(`freq_pen=${p.frequency_penalty}`);
+    if (p.repeat_penalty !== undefined) parts.push(`rep_pen=${p.repeat_penalty}`);
+    row('Sampling', parts.join(', '));
+  } else if (selection.rawArgs && selection.rawArgs.length > 0) {
+    row('Sampling', selection.rawArgs.join(' '));
+  } else {
+    row('Sampling', 'llama.cpp defaults');
+  }
+
   console.log(`  ${dim('─'.repeat(60))}`);
   console.log('');
 

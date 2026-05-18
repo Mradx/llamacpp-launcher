@@ -31,6 +31,21 @@ export function buildServerArgs(config: Config, selection: FullSelection): strin
     args.push('--spec-type', 'draft-mtp', '--spec-draft-n-max', String(config.draftTokens));
   }
 
+  if (selection.params) {
+    const p = selection.params;
+    if (p.temp !== undefined) args.push('--temp', String(p.temp));
+    if (p.top_k !== undefined) args.push('--top-k', String(p.top_k));
+    if (p.top_p !== undefined) args.push('--top-p', String(p.top_p));
+    if (p.min_p !== undefined) args.push('--min-p', String(p.min_p));
+    if (p.presence_penalty !== undefined) args.push('--presence-penalty', String(p.presence_penalty));
+    if (p.frequency_penalty !== undefined) args.push('--frequency-penalty', String(p.frequency_penalty));
+    if (p.repeat_penalty !== undefined) args.push('--repeat-penalty', String(p.repeat_penalty));
+  }
+
+  if (selection.rawArgs && selection.rawArgs.length > 0) {
+    args.push(...selection.rawArgs);
+  }
+
   return args;
 }
 

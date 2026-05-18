@@ -3,10 +3,14 @@ import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { formatNumber } from '../utils/format.js';
+import { calculateFit } from '../services/memory.js';
+import type { FitStatus, HardwareInfo } from '../types.js';
 
 interface ContextSelectProps {
   options: number[];
   defaultContext: number;
+  modelSizeBytes?: number;
+  hardware?: HardwareInfo | null;
   onSelect: (ctx: number) => void;
   onBack: () => void;
 }
@@ -19,9 +23,29 @@ const descriptions: Record<number, string> = {
   128000: 'maximum',
 };
 
-export function ContextSelect({ options, defaultContext, onSelect, onBack }: ContextSelectProps) {
+function fitColor(status: FitStatus): string {
+  switch (status) {
+    case 'GPU_OK': return '#22c55e';
+    case 'PARTIAL': return '#eab308';
+    case 'RAM_OK': return '#38bdf8';
+    case 'TOO_BIG': return '#ef4444';
+  }
+}
+
+function fitLabel(status: FitStatus): string {
+  switch (status) {
+    case 'GPU_OK': return 'GPU OK';
+    case 'PARTIAL': return 'PARTIAL';
+    case 'RAM_OK': return 'RAM OK';
+    case 'TOO_BIG': return 'TOO BIG';
+  }
+}
+
+export function ContextSelect({ options, defaultContext, modelSizeBytes, hardware, onSelect, onBack }: ContextSelectProps) {
   const defaultIdx = options.indexOf(defaultContext);
   const [selectedIndex, setSelectedIndex] = useState(defaultIdx >= 0 ? defaultIdx : 2);
+
+  const canShowFit = !!(modelSizeBytes && hardware);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -47,6 +71,11 @@ export function ContextSelect({ options, defaultContext, onSelect, onBack }: Con
           const isDefault = ctx === defaultContext;
           const desc = descriptions[ctx] || '';
 
+          let fit: ReturnType<typeof calculateFit> | null = null;
+          if (canShowFit) {
+            fit = calculateFit(modelSizeBytes!, ctx, hardware!.vramMb, hardware!.ramMb);
+          }
+
           return (
             <Box key={ctx}>
               <Text color={isSelected ? '#d946ef' : undefined}>
@@ -62,7 +91,14 @@ export function ContextSelect({ options, defaultContext, onSelect, onBack }: Con
                   {formatNumber(ctx).padStart(7)} tokens
                 </Text>
               </Box>
-              <Text dimColor>  ({desc}){isDefault ? ' ★' : ''}</Text>
+              <Box width={18}>
+                <Text dimColor>  ({desc}){isDefault ? ' ★' : ''}</Text>
+              </Box>
+              {fit && (
+                <Text color={fitColor(fit.fitStatus)} bold={isSelected}>
+                  {'  '}{fitLabel(fit.fitStatus)}
+                </Text>
+              )}
             </Box>
           );
         })}

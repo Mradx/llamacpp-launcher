@@ -7,15 +7,13 @@ interface KeyHintProps {
 
 export function KeyHint({ hints }: KeyHintProps) {
   return (
-    <Box marginTop={1}>
-      <Text dimColor>
-        {hints.map((h, i) => (
-          <Text key={h.key}>
-            {i > 0 ? '  ' : ''}
-            <Text bold>{h.key}</Text> {h.label}
-          </Text>
-        ))}
-      </Text>
+    <Box marginTop={1} columnGap={2}>
+      {hints.map(h => (
+        <Box key={h.key}>
+          <Text dimColor bold>{h.key}</Text>
+          <Text dimColor> {h.label}</Text>
+        </Box>
+      ))}
     </Box>
   );
 }
