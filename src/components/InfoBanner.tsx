@@ -43,7 +43,7 @@ export function InfoBanner({ config, hardware, network, selection }: InfoBannerP
       <Text> </Text>
       <Box>
         <Text dimColor>
-          Context {formatNumber(selection.contextSize)} │ Layers {config.gpuLayers} │ Slots {config.parallelSlots} │ MTP {selection.mtpEnabled ? 'on' : 'off'}
+          Context {formatNumber(selection.contextSize)} │ Layers {selection.gpuLayers} │ Slots {config.parallelSlots} │ MTP {selection.mtpEnabled ? 'on' : 'off'}
         </Text>
       </Box>
     </Box>

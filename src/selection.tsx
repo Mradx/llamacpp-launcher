@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Box, render, useApp } from 'ink';
 import { statSync } from 'node:fs';
-import { loadConfig } from './config.js';
+import { loadConfig, loadStoredConfig, saveUserConfig } from './config.js';
+import { SettingsScreen } from './screens/SettingsScreen.js';
 import { useHardware } from './hooks/useHardware.js';
 import { useModels } from './hooks/useModels.js';
 import { detectMtp } from './services/mtp.js';
@@ -17,7 +18,7 @@ import { LayerSelect } from './screens/LayerSelect.js';
 import { ParamsSelect } from './screens/ParamsSelect.js';
 import { CustomParams } from './screens/CustomParams.js';
 import { ExpertParams } from './screens/ExpertParams.js';
-import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, HardwareInfo, NetworkInfo } from './types.js';
+import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, StoredConfig, HardwareInfo, NetworkInfo } from './types.js';
 
 export interface SelectionResult {
   config: Config;
@@ -36,19 +37,22 @@ function getModelIdentifier(model: ModelSelection): string {
 }
 
 function SelectionApp({ onDone }: SelectionAppProps) {
-  const config = useMemo(() => loadConfig(), []);
+  const [configVersion, setConfigVersion] = useState(0);
+  const config = useMemo(() => loadConfig(), [configVersion]);
   const { hardware, network } = useHardware(config.port);
   const { models, loading: modelsLoading, deleteModel } = useModels(config.hfCachePath);
   const { exit } = useApp();
 
   const [screen, setScreen] = useState<Screen>('model-select');
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ModelSelection | null>(null);
   const [quantLoading, setQuantLoading] = useState(false);
   const quantCancelledRef = useRef(false);
-  const [contextSize, setContextSize] = useState(config.defaultContext);
+  const defaultContext = config.contextOptions[Math.floor(config.contextOptions.length / 2)] || 64000;
+  const [contextSize, setContextSize] = useState(defaultContext);
   const [modelSizeBytes, setModelSizeBytes] = useState<number | undefined>();
   const [modelMetadata, setModelMetadata] = useState<ModelSelection['metadata']>();
-  const [gpuLayers, setGpuLayers] = useState(config.gpuLayers);
+  const [gpuLayers, setGpuLayers] = useState(99);
   const [didShowLayerSelect, setDidShowLayerSelect] = useState(false);
 
   const handleModelSelect = async (model: ModelSelection) => {
@@ -121,7 +125,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       return;
     }
     setDidShowLayerSelect(false);
-    setGpuLayers(config.gpuLayers);
+    setGpuLayers(99);
     setScreen('params-select');
   };
 
@@ -202,6 +206,17 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     process.exit(0);
   };
 
+  const handleSettings = () => {
+    setShowSettings(true);
+  };
+
+  const handleSettingsDone = (saved: boolean) => {
+    setShowSettings(false);
+    if (saved) {
+      setConfigVersion(v => v + 1);
+    }
+  };
+
   const modelIdentifier = selectedModel ? getModelIdentifier(selectedModel) : '';
   const preset = selectedModel ? findPreset(modelIdentifier) : null;
   const profiles = preset?.profiles || [];
@@ -211,6 +226,15 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const kvCache = modelSizeBytes
     ? calculateKvCache(contextSize, effectiveMetadata, modelSizeBytes)
     : null;
+
+  if (showSettings) {
+    return (
+      <SettingsScreen
+        currentConfig={loadStoredConfig()}
+        onDone={handleSettingsDone}
+      />
+    );
+  }
 
   return (
     <Box flexDirection="column">
@@ -222,13 +246,13 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           onSelect={handleModelSelect}
           onDelete={deleteModel}
           onQuit={handleQuit}
+          onSettings={handleSettings}
         />
       )}
 
       {screen === 'context-select' && (
         <ContextSelect
           options={config.contextOptions}
-          defaultContext={config.defaultContext}
           modelSizeBytes={modelSizeBytes}
           metadata={effectiveMetadata}
           hardware={hardware}

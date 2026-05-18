@@ -1,15 +1,17 @@
-export interface Config {
-  serverDir: string;
-  serverExe: string;
+export interface StoredConfig {
+  llamaCppDir: string;
   hfCachePath: string;
   host: string;
   port: number;
-  defaultContext: number;
-  gpuLayers: number;
   parallelSlots: number;
   draftTokens: number;
   contextOptions: number[];
 }
+
+export type Config = StoredConfig & {
+  serverDir: string;
+  serverExe: string;
+};
 
 export interface HardwareInfo {
   gpuName: string;

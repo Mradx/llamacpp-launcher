@@ -9,7 +9,6 @@ import { fitStatusColor, theme } from '../theme.js';
 
 interface ContextSelectProps {
   options: number[];
-  defaultContext: number;
   modelSizeBytes?: number;
   metadata?: ModelMetadata;
   hardware?: HardwareInfo | null;
@@ -34,9 +33,9 @@ function fitLabel(status: FitStatus): string {
   }
 }
 
-export function ContextSelect({ options, defaultContext, modelSizeBytes, metadata, hardware, onSelect, onBack }: ContextSelectProps) {
-  const defaultIdx = options.indexOf(defaultContext);
-  const [selectedIndex, setSelectedIndex] = useState(defaultIdx >= 0 ? defaultIdx : 2);
+export function ContextSelect({ options, modelSizeBytes, metadata, hardware, onSelect, onBack }: ContextSelectProps) {
+  const suggestedIdx = Math.floor(options.length / 2);
+  const [selectedIndex, setSelectedIndex] = useState(suggestedIdx);
 
   const canShowFit = !!(modelSizeBytes && hardware);
 
@@ -61,7 +60,7 @@ export function ContextSelect({ options, defaultContext, modelSizeBytes, metadat
       <Box flexDirection="column" marginLeft={2}>
         {options.map((ctx, i) => {
           const isSelected = i === selectedIndex;
-          const isDefault = ctx === defaultContext;
+          const isDefault = i === suggestedIdx;
           const desc = descriptions[ctx] || '';
 
           let fit: ReturnType<typeof calculateFit> | null = null;

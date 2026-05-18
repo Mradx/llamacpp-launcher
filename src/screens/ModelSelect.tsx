@@ -18,6 +18,7 @@ interface ModelSelectProps {
   onSelect: (model: ModelSelection) => void;
   onDelete: (model: LocalModel) => void;
   onQuit: () => void;
+  onSettings: () => void;
 }
 
 function metadataSummary(metadata?: ModelMetadata): string {
@@ -31,13 +32,15 @@ function metadataSummary(metadata?: ModelMetadata): string {
   ].filter(Boolean).join(' · ');
 }
 
-export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, onQuit }: ModelSelectProps) {
+export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, onQuit, onSettings }: ModelSelectProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showHfInput, setShowHfInput] = useState(false);
   const [hfInput, setHfInput] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<LocalModel | null>(null);
 
-  const totalItems = models.length + 1; // models + HF option
+  const hfIndex = models.length;
+  const settingsIndex = models.length + 1;
+  const totalItems = models.length + 2;
 
   useEffect(() => {
     setSelectedIndex(i => Math.min(i, Math.max(0, models.length)));
@@ -68,8 +71,10 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
           label: model.metadata?.name || model.fileName.replace('.gguf', ''),
           metadata: model.metadata,
         });
-      } else {
+      } else if (selectedIndex === hfIndex) {
         setShowHfInput(true);
+      } else if (selectedIndex === settingsIndex) {
+        onSettings();
       }
     }
   });
@@ -138,15 +143,15 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
             ))}
 
             <Box marginTop={models.length > 0 ? 1 : 0}>
-              <Text color={selectedIndex === models.length ? theme.marker : undefined}>
-                {selectedIndex === models.length ? ' › ' : '   '}
+              <Text color={selectedIndex === hfIndex ? theme.marker : undefined}>
+                {selectedIndex === hfIndex ? ' › ' : '   '}
               </Text>
               <Box width={4}>
-                <Text color={selectedIndex === models.length ? 'white' : theme.textMuted} bold={selectedIndex === models.length}>
+                <Text color={selectedIndex === hfIndex ? 'white' : theme.textMuted} bold={selectedIndex === hfIndex}>
                   {models.length + 1}.
                 </Text>
               </Box>
-              <Text color={selectedIndex === models.length ? 'white' : theme.textMuted} bold={selectedIndex === models.length}>
+              <Text color={selectedIndex === hfIndex ? 'white' : theme.textMuted} bold={selectedIndex === hfIndex}>
                 Enter Hugging Face repo or URL...
               </Text>
             </Box>
@@ -162,6 +167,18 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
                 />
               </Box>
             )}
+
+            <Box marginTop={1}>
+              <Text color={selectedIndex === settingsIndex ? theme.marker : undefined}>
+                {selectedIndex === settingsIndex ? ' › ' : '   '}
+              </Text>
+              <Box width={4}>
+                <Text> </Text>
+              </Box>
+              <Text color={selectedIndex === settingsIndex ? 'white' : theme.textMuted} bold={selectedIndex === settingsIndex}>
+                Settings...
+              </Text>
+            </Box>
 
             <Text> </Text>
           </Box>
