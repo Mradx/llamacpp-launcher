@@ -25,9 +25,18 @@ function fitLabel(status: FitStatus): string {
   }
 }
 
-function truncateFileName(name: string, maxLen: number): string {
-  if (name.length <= maxLen) return name;
-  return name.slice(0, maxLen - 3) + '...';
+function truncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen - 3) + '...';
+}
+
+function extractQuant(fileName: string): { baseName: string; quant: string } {
+  const base = fileName.replace(/\.gguf$/i, '');
+  const match = base.match(/[-_]((?:UD[-_])?(?:I?Q\d[-_\w]*|[BF]F?\d+\w*))$/i);
+  if (match) {
+    return { baseName: base.slice(0, match.index!), quant: match[1] };
+  }
+  return { baseName: base, quant: '' };
 }
 
 export function FitTable({ files, selectedIndex }: FitTableProps) {
@@ -35,16 +44,18 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
     <Box flexDirection="column">
       <Box marginBottom={0}>
         <Box width={4}><Text bold dimColor> # </Text></Box>
-        <Box width={44}><Text bold dimColor>File</Text></Box>
+        <Box width={30}><Text bold dimColor>File</Text></Box>
+        <Box width={16}><Text bold dimColor>Quant</Text></Box>
         <Box width={10}><Text bold dimColor>Size</Text></Box>
         <Box width={10}><Text bold dimColor>Fit</Text></Box>
       </Box>
       <Box marginBottom={0}>
-        <Text dimColor>{'─'.repeat(68)}</Text>
+        <Text dimColor>{'─'.repeat(70)}</Text>
       </Box>
       {files.map((file, i) => {
         const isSelected = i === selectedIndex;
         const fileName = file.path.split('/').pop() || file.path;
+        const { baseName, quant } = extractQuant(fileName);
 
         return (
           <Box key={file.path}>
@@ -53,9 +64,14 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
                 {isSelected ? '›' : ' '}{String(i + 1).padStart(2)}
               </Text>
             </Box>
-            <Box width={44}>
+            <Box width={30}>
               <Text color={isSelected ? 'white' : undefined} bold={isSelected}>
-                {truncateFileName(fileName, 42)}
+                {truncate(baseName, 28)}
+              </Text>
+            </Box>
+            <Box width={16}>
+              <Text color={isSelected ? '#c084fc' : '#a78bfa'} bold={isSelected}>
+                {quant}
               </Text>
             </Box>
             <Box width={10}>

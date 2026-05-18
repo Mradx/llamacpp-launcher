@@ -43,7 +43,7 @@ export function launchServer(result: SelectionResult): void {
   row('Local', network?.localUrl || `http://localhost:${config.port}`);
   row('Network', network?.lanUrl || 'unavailable');
   console.log('');
-  console.log(`  ${dim(`Context ${formatNumber(selection.contextSize)} │ Layers ${config.gpuLayers} │ Slots ${config.parallelSlots} │ MTP ${selection.mtpEnabled ? 'on' : 'off'}`)}`);
+  console.log(`  ${dim(`Context ${formatNumber(selection.contextSize)} │ GPU Layers ${selection.gpuLayers} │ Slots ${config.parallelSlots} │ MTP ${selection.mtpEnabled ? 'on' : 'off'}`)}`);
 
   if (selection.params) {
     const p = selection.params;

@@ -76,9 +76,10 @@ export interface ModelPreset {
 export interface FullSelection {
   model: ModelSelection;
   contextSize: number;
+  gpuLayers: number;
   mtpEnabled: boolean;
   params: ModelParams | null;
   rawArgs: string[];
 }
 
-export type Screen = 'model-select' | 'context-select' | 'quant-picker' | 'params-select' | 'custom-params' | 'expert-params';
+export type Screen = 'model-select' | 'context-select' | 'quant-picker' | 'layer-select' | 'params-select' | 'custom-params' | 'expert-params';

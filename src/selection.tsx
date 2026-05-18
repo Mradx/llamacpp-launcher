@@ -7,10 +7,12 @@ import { useModels } from './hooks/useModels.js';
 import { detectMtp } from './services/mtp.js';
 import { getProfiles, findPreset } from './services/presets.js';
 import { saveToHistory } from './services/params-history.js';
+import { calculateFit, estimateLayers, calculateKvCacheMb } from './services/memory.js';
 import { normalizeHfRef } from './utils/hf-url.js';
 import { ModelSelect } from './screens/ModelSelect.js';
 import { ContextSelect } from './screens/ContextSelect.js';
 import { QuantPicker } from './screens/QuantPicker.js';
+import { LayerSelect } from './screens/LayerSelect.js';
 import { ParamsSelect } from './screens/ParamsSelect.js';
 import { CustomParams } from './screens/CustomParams.js';
 import { ExpertParams } from './screens/ExpertParams.js';
@@ -32,17 +34,6 @@ function getModelIdentifier(model: ModelSelection): string {
   return model.repo + ' ' + (model.file || '') + ' ' + model.label;
 }
 
-function getModelSizeBytes(model: ModelSelection): number | undefined {
-  if (model.mode === 'local') {
-    try {
-      return statSync(model.path).size;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
 function SelectionApp({ onDone }: SelectionAppProps) {
   const config = useMemo(() => loadConfig(), []);
   const { hardware, network } = useHardware(config.port);
@@ -52,6 +43,9 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [screen, setScreen] = useState<Screen>('model-select');
   const [selectedModel, setSelectedModel] = useState<ModelSelection | null>(null);
   const [contextSize, setContextSize] = useState(config.defaultContext);
+  const [modelSizeBytes, setModelSizeBytes] = useState<number | undefined>();
+  const [gpuLayers, setGpuLayers] = useState(config.gpuLayers);
+  const [didShowLayerSelect, setDidShowLayerSelect] = useState(false);
 
   const handleModelSelect = (model: ModelSelection) => {
     if (model.mode === 'hf') {
@@ -60,6 +54,11 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       if (quant) {
         model = { ...model, file: quant };
       }
+    }
+    if (model.mode === 'local') {
+      try { setModelSizeBytes(statSync(model.path).size); } catch { setModelSizeBytes(undefined); }
+    } else {
+      setModelSizeBytes(undefined);
     }
     setSelectedModel(model);
     setScreen('context-select');
@@ -70,7 +69,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     if (selectedModel?.mode === 'hf' && !selectedModel.file) {
       setScreen('quant-picker');
     } else {
-      goToParams(selectedModel!, ctx);
+      goToLayersOrParams(ctx);
     }
   };
 
@@ -83,16 +82,48 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         label: fileName.replace('.gguf', ''),
       };
       setSelectedModel(updated);
-      goToParams(updated, contextSize);
+      setModelSizeBytes(file.sizeBytes);
+      goToLayersOrParams(contextSize, file.sizeBytes);
     }
   };
 
-  const goToParams = (_model: ModelSelection, _ctx: number) => {
+  const goToLayersOrParams = (ctx: number, sizeOverride?: number) => {
+    const size = sizeOverride ?? modelSizeBytes;
+    if (size && hardware && hardware.vramMb > 0) {
+      setDidShowLayerSelect(true);
+      setScreen('layer-select');
+      return;
+    }
+    setDidShowLayerSelect(false);
+    setGpuLayers(config.gpuLayers);
     setScreen('params-select');
   };
 
+  const handleLayerSelect = (layers: number) => {
+    setGpuLayers(layers);
+    setScreen('params-select');
+  };
+
+  const goBackFromParams = () => {
+    if (didShowLayerSelect) {
+      setScreen('layer-select');
+    } else if (selectedModel?.mode === 'hf' && selectedModel.file) {
+      setScreen('quant-picker');
+    } else {
+      setScreen('context-select');
+    }
+  };
+
+  const goBackFromLayers = () => {
+    if (selectedModel?.mode === 'hf' && selectedModel.file) {
+      setScreen('quant-picker');
+    } else {
+      setScreen('context-select');
+    }
+  };
+
   const handleParamsSelect = (params: ModelParams | null) => {
-    finalize(selectedModel!, contextSize, params, []);
+    finalize(params, []);
   };
 
   const handleCustomConfirm = (params: ModelParams) => {
@@ -100,24 +131,26 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     if (hasParams) {
       saveToHistory({ type: 'custom', params });
     }
-    finalize(selectedModel!, contextSize, hasParams ? params : null, []);
+    finalize(hasParams ? params : null, []);
   };
 
   const handleExpertConfirm = (rawArgs: string[]) => {
     if (rawArgs.length > 0) {
       saveToHistory({ type: 'expert', rawArgs, raw: rawArgs.join(' ') });
     }
-    finalize(selectedModel!, contextSize, null, rawArgs);
+    finalize(null, rawArgs);
   };
 
   const handleExpertDirect = (rawArgs: string[]) => {
-    finalize(selectedModel!, contextSize, null, rawArgs);
+    finalize(null, rawArgs);
   };
 
-  const finalize = (model: ModelSelection, ctx: number, params: ModelParams | null, rawArgs: string[]) => {
+  const finalize = (params: ModelParams | null, rawArgs: string[]) => {
+    const model = selectedModel!;
     const fullSelection: FullSelection = {
       model,
-      contextSize: ctx,
+      contextSize,
+      gpuLayers,
       mtpEnabled: detectMtp(
         model.mode === 'hf' ? model.repo : model.path,
         model.mode === 'hf' ? model.file : undefined
@@ -154,7 +187,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         <ContextSelect
           options={config.contextOptions}
           defaultContext={config.defaultContext}
-          modelSizeBytes={selectedModel ? getModelSizeBytes(selectedModel) : undefined}
+          modelSizeBytes={modelSizeBytes}
           hardware={hardware}
           onSelect={handleContextSelect}
           onBack={() => setScreen('model-select')}
@@ -171,6 +204,18 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         />
       )}
 
+      {screen === 'layer-select' && modelSizeBytes && hardware && (
+        <LayerSelect
+          totalLayers={estimateLayers(modelSizeBytes / (1024 ** 3))}
+          modelSizeMb={Math.floor(modelSizeBytes / (1024 * 1024))}
+          kvCacheMb={calculateKvCacheMb(contextSize, estimateLayers(modelSizeBytes / (1024 ** 3)))}
+          vramMb={hardware.vramMb}
+          ramMb={hardware.ramMb}
+          onSelect={handleLayerSelect}
+          onBack={goBackFromLayers}
+        />
+      )}
+
       {screen === 'params-select' && (
         <ParamsSelect
           presetName={preset?.name || 'Model'}
@@ -179,13 +224,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           onCustom={() => setScreen('custom-params')}
           onExpert={() => setScreen('expert-params')}
           onExpertDirect={handleExpertDirect}
-          onBack={() => {
-            if (selectedModel?.mode === 'hf' && selectedModel.file) {
-              setScreen('quant-picker');
-            } else {
-              setScreen('context-select');
-            }
-          }}
+          onBack={goBackFromParams}
         />
       )}
 

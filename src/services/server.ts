@@ -23,7 +23,7 @@ export function buildServerArgs(config: Config, selection: FullSelection): strin
     ...buildModelArgs(selection),
     '-c', String(selection.contextSize),
     '-fa', 'on',
-    '-ngl', String(config.gpuLayers),
+    '-ngl', String(selection.gpuLayers),
     '-np', String(config.parallelSlots),
   ];
 
