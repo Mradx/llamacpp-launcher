@@ -15,10 +15,13 @@ type SelectAction =
 interface ParamsSelectProps {
   presetName: string;
   profiles: ParamsProfile[];
+  hasTemplate: boolean;
+  hasTemplateOverride: boolean;
   onSelect: (params: ModelParams | null) => void;
   onCustom: () => void;
   onExpert: () => void;
   onExpertDirect: (rawArgs: string[]) => void;
+  onTemplate: () => void;
   onBack: () => void;
 }
 
@@ -34,7 +37,7 @@ function formatParamsRaw(params: ModelParams): string {
   return parts.join(' ');
 }
 
-export function ParamsSelect({ presetName, profiles, onSelect, onCustom, onExpert, onExpertDirect, onBack }: ParamsSelectProps) {
+export function ParamsSelect({ presetName, profiles, hasTemplate, hasTemplateOverride, onSelect, onCustom, onExpert, onExpertDirect, onTemplate, onBack }: ParamsSelectProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [history, setHistory] = useState(() => loadHistory());
 
@@ -76,6 +79,9 @@ export function ParamsSelect({ presetName, profiles, onSelect, onCustom, onExper
       setSelectedIndex(i => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setSelectedIndex(i => Math.min(items.length - 1, i + 1));
+    } else if (input === 't' || input === 'T' || input === 'е' || input === 'Е') {
+      onTemplate();
+      return;
     } else if (input === 'd' || input === 'D' || input === 'в' || input === 'В') {
       const historyIndex = selectedIndex - recentStart;
       if (historyIndex >= 0 && historyIndex < history.length) {
@@ -131,10 +137,21 @@ export function ParamsSelect({ presetName, profiles, onSelect, onCustom, onExper
         })}
       </Box>
 
+      {(hasTemplate || hasTemplateOverride) && (
+        <Box marginLeft={2} marginTop={1}>
+          <Text dimColor>Chat Template: </Text>
+          {hasTemplateOverride
+            ? <Text color={theme.warning}>custom override</Text>
+            : <Text color={theme.success}>model default</Text>
+          }
+        </Box>
+      )}
+
       <Box marginLeft={2}>
         <KeyHint hints={[
           { key: '↑↓', label: 'navigate' },
           { key: '⏎', label: 'select' },
+          { key: 't', label: 'template' },
           ...(selectedIndex >= recentStart && selectedIndex < recentStart + history.length
             ? [{ key: 'd', label: 'delete' }]
             : []),

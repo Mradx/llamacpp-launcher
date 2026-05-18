@@ -75,6 +75,10 @@ export function launchServer(result: SelectionResult): void {
     row('Sampling', 'llama.cpp defaults');
   }
 
+  if (selection.chatTemplateOverride) {
+    row('Template', 'custom override');
+  }
+
   console.log(`  ${dim('─'.repeat(60))}`);
   console.log('');
 

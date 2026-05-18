@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:unsloth.ai)",
+      "Bash(pip install *)"
+    ]
+  }
+}

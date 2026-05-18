@@ -42,6 +42,10 @@ export function buildServerArgs(config: Config, selection: FullSelection): strin
     if (p.repeat_penalty !== undefined) args.push('--repeat-penalty', String(p.repeat_penalty));
   }
 
+  if (selection.chatTemplateOverride) {
+    args.push('--chat-template-str', selection.chatTemplateOverride);
+  }
+
   if (selection.rawArgs && selection.rawArgs.length > 0) {
     args.push(...selection.rawArgs);
   }

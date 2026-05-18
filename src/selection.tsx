@@ -8,6 +8,7 @@ import { useModels } from './hooks/useModels.js';
 import { detectMtp } from './services/mtp.js';
 import { getProfiles, findPreset } from './services/presets.js';
 import { saveToHistory } from './services/params-history.js';
+import { loadTemplateOverride, saveTemplateOverride } from './services/template-overrides.js';
 import { calculateKvCache, estimateModelMetadata, getEffectiveMetadata } from './services/memory.js';
 import { fetchGgufMetadata } from './services/gguf.js';
 import { normalizeHfRef } from './utils/hf-url.js';
@@ -18,6 +19,7 @@ import { LayerSelect } from './screens/LayerSelect.js';
 import { ParamsSelect } from './screens/ParamsSelect.js';
 import { CustomParams } from './screens/CustomParams.js';
 import { ExpertParams } from './screens/ExpertParams.js';
+import { ChatTemplate } from './screens/ChatTemplate.js';
 import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, StoredConfig, HardwareInfo, NetworkInfo } from './types.js';
 
 export interface SelectionResult {
@@ -54,6 +56,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [modelMetadata, setModelMetadata] = useState<ModelSelection['metadata']>();
   const [gpuLayers, setGpuLayers] = useState(99);
   const [didShowLayerSelect, setDidShowLayerSelect] = useState(false);
+  const [chatTemplateOverride, setChatTemplateOverride] = useState<string | undefined>(undefined);
 
   const handleModelSelect = async (model: ModelSelection) => {
     setModelMetadata(model.metadata);
@@ -79,6 +82,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         setModelMetadata(model.metadata);
       }
     }
+    setChatTemplateOverride(loadTemplateOverride(model));
     setSelectedModel(model);
     setScreen('context-select');
   };
@@ -113,6 +117,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       setSelectedModel(updated);
       setModelSizeBytes(file.sizeBytes);
       setModelMetadata(updated.metadata);
+      setChatTemplateOverride(loadTemplateOverride(updated));
       goToLayersOrParams(contextSize, file.sizeBytes);
     }
   };
@@ -183,6 +188,14 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     finalize(null, rawArgs);
   };
 
+  const handleTemplateConfirm = (override: string | undefined) => {
+    setChatTemplateOverride(override);
+    if (selectedModel) {
+      saveTemplateOverride(selectedModel, override);
+    }
+    setScreen('params-select');
+  };
+
   const finalize = (params: ModelParams | null, rawArgs: string[]) => {
     const metadata = modelSizeBytes ? getEffectiveMetadata(modelMetadata, modelSizeBytes) : modelMetadata;
     const model = { ...selectedModel!, metadata } as ModelSelection;
@@ -198,6 +211,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       ),
       params,
       rawArgs,
+      chatTemplateOverride,
     };
     onDone({ config, hardware, network, selection: fullSelection });
     exit();
@@ -291,10 +305,13 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         <ParamsSelect
           presetName={preset?.name || 'Model'}
           profiles={profiles}
+          hasTemplate={!!effectiveMetadata?.chatTemplate}
+          hasTemplateOverride={chatTemplateOverride !== undefined}
           onSelect={handleParamsSelect}
           onCustom={() => setScreen('custom-params')}
           onExpert={() => setScreen('expert-params')}
           onExpertDirect={handleExpertDirect}
+          onTemplate={() => setScreen('chat-template')}
           onBack={goBackFromParams}
         />
       )}
@@ -309,6 +326,15 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       {screen === 'expert-params' && (
         <ExpertParams
           onConfirm={handleExpertConfirm}
+          onBack={() => setScreen('params-select')}
+        />
+      )}
+
+      {screen === 'chat-template' && (
+        <ChatTemplate
+          embeddedTemplate={effectiveMetadata?.chatTemplate}
+          currentOverride={chatTemplateOverride}
+          onConfirm={handleTemplateConfirm}
           onBack={() => setScreen('params-select')}
         />
       )}
