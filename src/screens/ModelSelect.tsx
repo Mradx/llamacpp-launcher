@@ -5,9 +5,12 @@ import Spinner from 'ink-spinner';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
+import { TitleBlock } from '../components/TitleBlock.js';
+import { CONTENT_MARGIN_X, PAGE_MARGIN_X } from '../layout.js';
 import { formatSize } from '../utils/format.js';
 import { getSiblingModels } from '../services/models.js';
 import type { LocalModel, ModelSelection } from '../types.js';
+import { theme } from '../theme.js';
 
 interface ModelSelectProps {
   models: LocalModel[];
@@ -77,71 +80,76 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
       <Header title="LLAMA.CPP LAUNCHER" subtitle={`Cache: ${hfCachePath}`} />
 
       {loading ? (
-        <Box marginLeft={2}>
-          <Text color="#eab308"><Spinner type="dots" /></Text>
+        <Box marginLeft={CONTENT_MARGIN_X}>
+          <Text color={theme.warning}><Spinner type="dots" /></Text>
           <Text> Scanning for models...</Text>
         </Box>
       ) : (
-        <Box flexDirection="column" marginLeft={2}>
-          <Box marginBottom={1}>
-            <Text bold color="#8b5cf6">LOCAL MODELS</Text>
-          </Box>
-          <Box marginBottom={0}>
-            <Text dimColor>{'─'.repeat(50)}</Text>
-          </Box>
+        <Box flexDirection="column" marginLeft={PAGE_MARGIN_X}>
+          <TitleBlock title="LOCAL MODELS" />
 
-          {models.length === 0 && (
-            <Box marginY={1}>
-              <Text dimColor italic>  No local GGUF files found</Text>
-            </Box>
-          )}
+          <Box flexDirection="column" marginLeft={CONTENT_MARGIN_X - PAGE_MARGIN_X}>
+            {models.length === 0 && (
+              <Box marginY={1}>
+                <Text dimColor italic>  No local GGUF files found</Text>
+              </Box>
+            )}
 
-          {models.map((model, i) => (
-            <Box key={model.path} flexDirection="column">
-              <Box>
-                <Text color={i === selectedIndex ? '#d946ef' : undefined}>
-                  {i === selectedIndex ? ' › ' : '   '}
-                </Text>
-                <Text color={i === selectedIndex ? 'white' : '#a1a1aa'} bold={i === selectedIndex}>
-                  {i + 1}. {model.repoId}
+            {models.map((model, i) => (
+              <Box key={model.path} flexDirection="column">
+                <Box>
+                  <Text color={i === selectedIndex ? theme.marker : undefined}>
+                    {i === selectedIndex ? ' › ' : '   '}
+                  </Text>
+                  <Box width={4}>
+                    <Text color={i === selectedIndex ? 'white' : theme.textMuted} bold={i === selectedIndex}>
+                      {i + 1}.
+                    </Text>
+                  </Box>
+                  <Text color={i === selectedIndex ? 'white' : theme.textMuted} bold={i === selectedIndex}>
+                    {model.repoId}
+                  </Text>
+                </Box>
+                <Box marginLeft={8}>
+                  <Text dimColor>{model.fileName}</Text>
+                  <Text color={theme.accentMuted}>  {formatSize(model.sizeBytes)}</Text>
+                </Box>
+              </Box>
+            ))}
+
+            <Box marginTop={models.length > 0 ? 1 : 0}>
+              <Text color={selectedIndex === models.length ? theme.marker : undefined}>
+                {selectedIndex === models.length ? ' › ' : '   '}
+              </Text>
+              <Box width={4}>
+                <Text color={selectedIndex === models.length ? 'white' : theme.textMuted} bold={selectedIndex === models.length}>
+                  {models.length + 1}.
                 </Text>
               </Box>
-              <Box marginLeft={5}>
-                <Text dimColor>{model.fileName}</Text>
-                <Text dimColor color="#8b5cf6">  {formatSize(model.sizeBytes)}</Text>
+              <Text color={selectedIndex === models.length ? 'white' : theme.textMuted} bold={selectedIndex === models.length}>
+                Enter Hugging Face repo or URL...
+              </Text>
+            </Box>
+
+            {showHfInput && (
+              <Box marginTop={1} marginLeft={8}>
+                <Text color={theme.accent}>{'> '}</Text>
+                <TextInput
+                  value={hfInput}
+                  onChange={setHfInput}
+                  onSubmit={handleHfSubmit}
+                  placeholder="user/repo or https://huggingface.co/..."
+                />
               </Box>
-            </Box>
-          ))}
+            )}
 
-          <Box marginTop={models.length > 0 ? 1 : 0}>
-            <Text color={selectedIndex === models.length ? '#d946ef' : undefined}>
-              {selectedIndex === models.length ? ' › ' : '   '}
-            </Text>
-            <Text color={selectedIndex === models.length ? 'white' : '#a1a1aa'} bold={selectedIndex === models.length}>
-              {models.length + 1}. Enter Hugging Face repo or URL...
-            </Text>
-          </Box>
-
-          {showHfInput && (
-            <Box marginTop={1} marginLeft={5}>
-              <Text color="#8b5cf6">{'> '}</Text>
-              <TextInput
-                value={hfInput}
-                onChange={setHfInput}
-                onSubmit={handleHfSubmit}
-                placeholder="user/repo or https://huggingface.co/..."
-              />
-            </Box>
-          )}
-
-          <Box marginTop={1}>
-            <Text dimColor>{'─'.repeat(50)}</Text>
+            <Text> </Text>
           </Box>
         </Box>
       )}
 
       {!confirmDelete && (
-        <Box marginLeft={2}>
+        <Box marginLeft={CONTENT_MARGIN_X}>
           <KeyHint hints={[
             { key: '↑↓', label: 'navigate' },
             { key: '⏎', label: 'select' },

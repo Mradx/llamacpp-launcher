@@ -4,6 +4,7 @@ import TextInput from 'ink-text-input';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { parseRawArgs, findUnknownArgs } from '../services/known-params.js';
+import { theme } from '../theme.js';
 
 interface ExpertParamsProps {
   onConfirm: (rawArgs: string[]) => void;
@@ -64,7 +65,7 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
 
       {!showConfirm && (
         <Box marginLeft={2}>
-          <Text color="#8b5cf6" bold>{'> '}</Text>
+          <Text color={theme.accent} bold>{'> '}</Text>
           <TextInput
             value={input}
             onChange={setInput}
@@ -78,21 +79,21 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
         <Box flexDirection="column" marginLeft={2}>
           <Box
             borderStyle="round"
-            borderColor="#eab308"
+            borderColor={theme.warning}
             paddingX={2}
             paddingY={0}
             flexDirection="column"
           >
-            <Text color="#eab308" bold> Unknown parameters detected:</Text>
+            <Text color={theme.warning} bold> Unknown parameters detected:</Text>
             <Text> </Text>
             {unknownArgs.map(arg => (
-              <Text key={arg} color="#eab308">  • {arg}</Text>
+              <Text key={arg} color={theme.warning}>  • {arg}</Text>
             ))}
             <Text> </Text>
             <Text dimColor>  These are not in the llama-server sampling docs.</Text>
             <Text dimColor>  They may still work if the server supports them.</Text>
             <Text> </Text>
-            <Text>  Proceed anyway? <Text bold color="#22c55e">[Y]</Text>es / <Text bold color="#ef4444">[N]</Text>o</Text>
+            <Text>  Proceed anyway? <Text bold color={theme.success}>[Y]</Text>es / <Text bold color={theme.danger}>[N]</Text>o</Text>
           </Box>
         </Box>
       )}

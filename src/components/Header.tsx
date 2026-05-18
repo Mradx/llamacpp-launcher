@@ -1,32 +1,29 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import gradient from 'gradient-string';
+import { LLAMA_CPP_LOGO } from '../brand.js';
+import { theme } from '../theme.js';
+import { PAGE_MARGIN_X } from '../layout.js';
+import { TitleBlock } from './TitleBlock.js';
 
 interface HeaderProps {
   title: string;
   subtitle?: string;
 }
 
-const coolGradient = gradient(['#6366f1', '#8b5cf6', '#d946ef']);
-
 export function Header({ title, subtitle }: HeaderProps) {
-  const rendered = coolGradient(title);
-
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box
-        borderStyle="round"
-        borderColor="#6366f1"
-        paddingX={2}
-        paddingY={0}
-      >
-        <Text>{rendered}</Text>
+    <Box flexDirection="column" marginBottom={0} marginLeft={PAGE_MARGIN_X}>
+      <Box flexDirection="column">
+        {LLAMA_CPP_LOGO.map((line, index) => (
+          <Box key={index}>
+            <Text color={theme.logoText} bold>{line.llama}</Text>
+            <Text color={theme.logoAccent} bold>{line.cpp}</Text>
+          </Box>
+        ))}
       </Box>
-      {subtitle && (
-        <Box marginLeft={2}>
-          <Text dimColor>{subtitle}</Text>
-        </Box>
-      )}
+      <Box marginTop={1}>
+        <TitleBlock title={title} subtitle={subtitle} />
+      </Box>
     </Box>
   );
 }

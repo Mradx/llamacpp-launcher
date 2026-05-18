@@ -7,6 +7,7 @@ import { KeyHint } from '../components/KeyHint.js';
 import { listGgufFiles } from '../services/huggingface.js';
 import { formatMb } from '../utils/format.js';
 import type { HfFile, HardwareInfo } from '../types.js';
+import { theme } from '../theme.js';
 
 interface QuantPickerProps {
   repo: string;
@@ -86,12 +87,12 @@ export function QuantPicker({ repo, contextTokens, hardware, onSelect, onBack }:
 
       {loading ? (
         <Box marginLeft={2}>
-          <Text color="#eab308"><Spinner type="dots" /></Text>
+          <Text color={theme.warning}><Spinner type="dots" /></Text>
           <Text> Fetching available files...</Text>
         </Box>
       ) : error ? (
         <Box marginLeft={2} flexDirection="column">
-          <Text color="#ef4444">✖ {error}</Text>
+          <Text color={theme.danger}>✖ {error}</Text>
           <Text dimColor>  Press esc to go back</Text>
         </Box>
       ) : files.length === 0 ? (

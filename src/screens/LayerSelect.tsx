@@ -4,6 +4,7 @@ import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { calculateLayerSplit, calculateMaxGpuLayers } from '../services/memory.js';
 import { formatMb } from '../utils/format.js';
+import { theme, usageColor } from '../theme.js';
 
 interface LayerPreset {
   name: string;
@@ -62,7 +63,7 @@ function MemoryBar({ label, color, usedMb, totalMb }: { label: string; color: st
   const barWidth = 20;
   const pct = totalMb > 0 ? Math.min(100, Math.round(usedMb / totalMb * 100)) : 0;
   const filled = Math.round(Math.min(1, usedMb / totalMb) * barWidth);
-  const barColor = pct > 95 ? '#ef4444' : pct > 80 ? '#eab308' : '#6366f1';
+  const barColor = usageColor(pct);
 
   return (
     <Box>
@@ -85,8 +86,8 @@ function SplitPreview({ totalLayers, modelSizeMb, kvCacheMb, gpuLayers, vramMb, 
   const split = calculateLayerSplit(totalLayers, modelSizeMb, kvCacheMb, gpuLayers);
   return (
     <Box flexDirection="column">
-      <MemoryBar label="GPU" color="#22c55e" usedMb={split.gpuTotalMb} totalMb={vramMb} />
-      <MemoryBar label="RAM" color="#38bdf8" usedMb={split.cpuTotalMb} totalMb={ramMb} />
+      <MemoryBar label="GPU" color={theme.success} usedMb={split.gpuTotalMb} totalMb={vramMb} />
+      <MemoryBar label="RAM" color={theme.ram} usedMb={split.cpuTotalMb} totalMb={ramMb} />
     </Box>
   );
 }
@@ -132,15 +133,15 @@ export function LayerSelect({ totalLayers, modelSizeMb, kvCacheMb, vramMb, ramMb
         <Box flexDirection="column" marginLeft={2}>
           <Box marginBottom={1}>
             <Text bold>GPU Layers: </Text>
-            <Text color="#d946ef" bold>{customLayers}</Text>
+            <Text color={theme.marker} bold>{customLayers}</Text>
             <Text dimColor> / {totalLayers}</Text>
           </Box>
 
           <Box marginBottom={1}>
-            <Text color="#8b5cf6">{'◂ '}</Text>
-            <Text color="#6366f1">{'█'.repeat(filled)}</Text>
+            <Text color={theme.accent}>{'◂ '}</Text>
+            <Text color={theme.progress}>{'█'.repeat(filled)}</Text>
             <Text dimColor>{'░'.repeat(barWidth - filled)}</Text>
-            <Text color="#8b5cf6">{' ▸'}</Text>
+            <Text color={theme.accent}>{' ▸'}</Text>
           </Box>
 
           <SplitPreview
@@ -177,11 +178,11 @@ export function LayerSelect({ totalLayers, modelSizeMb, kvCacheMb, vramMb, ramMb
           const isSelected = i === selectedIndex;
           return (
             <Box key={p.name}>
-              <Text color={isSelected ? '#d946ef' : undefined}>
+              <Text color={isSelected ? theme.marker : undefined}>
                 {isSelected ? ' › ' : '   '}
               </Text>
               <Box width={4}>
-                <Text color={isSelected ? 'white' : '#a1a1aa'} bold={isSelected}>
+                <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
                   {i + 1}.
                 </Text>
               </Box>
@@ -196,11 +197,11 @@ export function LayerSelect({ totalLayers, modelSizeMb, kvCacheMb, vramMb, ramMb
         })}
 
         <Box>
-          <Text color={selectedIndex === presets.length ? '#d946ef' : undefined}>
+          <Text color={selectedIndex === presets.length ? theme.marker : undefined}>
             {selectedIndex === presets.length ? ' › ' : '   '}
           </Text>
           <Box width={4}>
-            <Text color={selectedIndex === presets.length ? 'white' : '#a1a1aa'} bold={selectedIndex === presets.length}>
+            <Text color={selectedIndex === presets.length ? 'white' : theme.textMuted} bold={selectedIndex === presets.length}>
               {presets.length + 1}.
             </Text>
           </Box>

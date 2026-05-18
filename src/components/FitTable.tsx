@@ -1,19 +1,11 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { HfFile, FitStatus } from '../types.js';
+import { fitStatusColor, theme } from '../theme.js';
 
 interface FitTableProps {
   files: HfFile[];
   selectedIndex: number;
-}
-
-function fitColor(status: FitStatus): string {
-  switch (status) {
-    case 'GPU_OK': return '#22c55e';
-    case 'PARTIAL': return '#eab308';
-    case 'RAM_OK': return '#38bdf8';
-    case 'TOO_BIG': return '#ef4444';
-  }
 }
 
 function fitLabel(status: FitStatus): string {
@@ -60,7 +52,7 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
         return (
           <Box key={file.path}>
             <Box width={4}>
-              <Text color={isSelected ? '#d946ef' : undefined}>
+              <Text color={isSelected ? theme.marker : undefined}>
                 {isSelected ? '›' : ' '}{String(i + 1).padStart(2)}
               </Text>
             </Box>
@@ -70,7 +62,7 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
               </Text>
             </Box>
             <Box width={16}>
-              <Text color={isSelected ? '#c084fc' : '#a78bfa'} bold={isSelected}>
+              <Text color={isSelected ? theme.logoAccent : theme.accent} bold={isSelected}>
                 {quant}
               </Text>
             </Box>
@@ -78,7 +70,7 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
               <Text>{String(file.sizeGb).padStart(5)} GB</Text>
             </Box>
             <Box width={10}>
-              <Text color={fitColor(file.fitStatus)} bold>
+              <Text color={fitStatusColor(file.fitStatus)} bold>
                 {fitLabel(file.fitStatus)}
               </Text>
             </Box>

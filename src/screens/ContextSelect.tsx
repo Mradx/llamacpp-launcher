@@ -5,6 +5,7 @@ import { KeyHint } from '../components/KeyHint.js';
 import { formatNumber } from '../utils/format.js';
 import { calculateFit } from '../services/memory.js';
 import type { FitStatus, HardwareInfo } from '../types.js';
+import { fitStatusColor, theme } from '../theme.js';
 
 interface ContextSelectProps {
   options: number[];
@@ -22,15 +23,6 @@ const descriptions: Record<number, string> = {
   96000: 'large',
   128000: 'maximum',
 };
-
-function fitColor(status: FitStatus): string {
-  switch (status) {
-    case 'GPU_OK': return '#22c55e';
-    case 'PARTIAL': return '#eab308';
-    case 'RAM_OK': return '#38bdf8';
-    case 'TOO_BIG': return '#ef4444';
-  }
-}
 
 function fitLabel(status: FitStatus): string {
   switch (status) {
@@ -78,11 +70,11 @@ export function ContextSelect({ options, defaultContext, modelSizeBytes, hardwar
 
           return (
             <Box key={ctx}>
-              <Text color={isSelected ? '#d946ef' : undefined}>
+              <Text color={isSelected ? theme.marker : undefined}>
                 {isSelected ? ' › ' : '   '}
               </Text>
               <Box width={4}>
-                <Text color={isSelected ? 'white' : '#a1a1aa'} bold={isSelected}>
+                <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
                   {i + 1}.
                 </Text>
               </Box>
@@ -95,7 +87,7 @@ export function ContextSelect({ options, defaultContext, modelSizeBytes, hardwar
                 <Text dimColor>  ({desc}){isDefault ? ' ★' : ''}</Text>
               </Box>
               {fit && (
-                <Text color={fitColor(fit.fitStatus)} bold={isSelected}>
+                <Text color={fitStatusColor(fit.fitStatus)} bold={isSelected}>
                   {'  '}{fitLabel(fit.fitStatus)}
                 </Text>
               )}

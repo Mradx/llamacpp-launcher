@@ -1,12 +1,11 @@
 import chalk from 'chalk';
-import gradient from 'gradient-string';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import type { SelectionResult } from './selection.js';
 import { buildServerArgs, validateServer } from './services/server.js';
 import { formatNumber, formatMb } from './utils/format.js';
-
-const coolGradient = gradient(['#6366f1', '#8b5cf6', '#d946ef']);
+import { LLAMA_CPP_LOGO } from './brand.js';
+import { theme } from './theme.js';
 
 export function launchServer(result: SelectionResult): void {
   const { config, hardware, network, selection } = result;
@@ -17,18 +16,22 @@ export function launchServer(result: SelectionResult): void {
     process.exit(1);
   }
 
-  const purple = chalk.hex('#8b5cf6');
+  const labelColor = chalk.hex(theme.accent);
   const dim = chalk.dim;
-  const border = chalk.hex('#6366f1');
+  const logoText = chalk.hex(theme.logoText).bold;
+  const logoAccent = chalk.hex(theme.logoAccent).bold;
+  const titleAccent = chalk.hex(theme.accentStrong).bold;
 
   console.log('');
-  console.log(border('╭' + '─'.repeat(62) + '╮'));
-  console.log(border('│') + '  ' + coolGradient('LLAMA.CPP SERVER') + ' '.repeat(44) + border('│'));
-  console.log(border('╰' + '─'.repeat(62) + '╯'));
+  for (const line of LLAMA_CPP_LOGO) {
+    console.log('  ' + logoText(line.llama) + logoAccent(line.cpp));
+  }
+  console.log('');
+  console.log('  ' + titleAccent('▌ ') + chalk.bold('LLAMA.CPP SERVER'));
   console.log('');
 
   const row = (label: string, value: string) => {
-    console.log(`  ${purple(label.padEnd(12))}${value}`);
+    console.log(`  ${labelColor(label.padEnd(12))}${value}`);
   };
 
   row('Model', selection.model.label);

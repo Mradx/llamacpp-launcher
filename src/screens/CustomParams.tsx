@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import type { ModelParams } from '../types.js';
+import { theme } from '../theme.js';
 
 interface ParamField {
   key: keyof ModelParams;
@@ -88,39 +89,39 @@ export function CustomParams({ onConfirm, onBack }: CustomParamsProps) {
 
           return (
             <Box key={field.key} marginBottom={0}>
-              <Text color={isSelected ? '#d946ef' : undefined}>
+              <Text color={isSelected ? theme.marker : undefined}>
                 {isSelected ? ' › ' : '   '}
               </Text>
               <Box width={20}>
-                <Text color={isSelected ? 'white' : '#a1a1aa'} bold={isSelected}>
+                <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
                   {field.label}
                 </Text>
               </Box>
               <Box width={3}>
-                <Text color={isSelected ? '#8b5cf6' : '#6b7280'}>{'◂'}</Text>
+                <Text color={isSelected ? theme.accent : theme.neutral}>{'◂'}</Text>
               </Box>
               <Box width={barWidth + 2}>
-                <Text color="#6366f1">{'█'.repeat(filled)}</Text>
+                <Text color={theme.progress}>{'█'.repeat(filled)}</Text>
                 <Text dimColor>{'░'.repeat(barWidth - filled)}</Text>
               </Box>
               <Box width={3}>
-                <Text color={isSelected ? '#8b5cf6' : '#6b7280'}>{'▸'}</Text>
+                <Text color={isSelected ? theme.accent : theme.neutral}>{'▸'}</Text>
               </Box>
               <Box width={8}>
                 <Text color={isSelected ? 'white' : undefined} bold={isSelected}>
                   {formatValue(value, field.step)}
                 </Text>
               </Box>
-              {!isDefault && <Text color="#eab308"> *</Text>}
+              {!isDefault && <Text color={theme.warning}> *</Text>}
             </Box>
           );
         })}
 
         <Box marginTop={1}>
-          <Text color={selectedIndex === FIELDS.length ? '#d946ef' : undefined}>
+          <Text color={selectedIndex === FIELDS.length ? theme.marker : undefined}>
             {selectedIndex === FIELDS.length ? ' › ' : '   '}
           </Text>
-          <Text color={selectedIndex === FIELDS.length ? '#22c55e' : '#a1a1aa'} bold={selectedIndex === FIELDS.length}>
+          <Text color={selectedIndex === FIELDS.length ? theme.success : theme.textMuted} bold={selectedIndex === FIELDS.length}>
             ✓ Confirm and launch
           </Text>
         </Box>

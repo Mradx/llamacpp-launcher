@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import type { HardwareInfo, NetworkInfo, FullSelection, Config } from '../types.js';
 import { formatNumber, formatMb } from '../utils/format.js';
+import { theme } from '../theme.js';
 
 interface InfoBannerProps {
   config: Config;
@@ -14,7 +15,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <Box>
       <Box width={12}>
-        <Text color="#8b5cf6" bold>{label}</Text>
+        <Text color={theme.accent} bold>{label}</Text>
       </Box>
       <Text>{value}</Text>
     </Box>

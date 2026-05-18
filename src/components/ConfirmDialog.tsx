@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
+import { theme } from '../theme.js';
 
 interface ConfirmDialogProps {
   title: string;
@@ -19,7 +20,7 @@ export function ConfirmDialog({ title, lines, onConfirm, onCancel }: ConfirmDial
 
   return (
     <Box flexDirection="column" marginLeft={2} marginTop={1}>
-      <Text bold color="#ef4444">{title}</Text>
+      <Text bold color={theme.danger}>{title}</Text>
       <Box flexDirection="column" marginTop={1}>
         {lines.map((line, i) => (
           <Text key={i} dimColor={i > 0}>{line}</Text>

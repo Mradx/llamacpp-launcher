@@ -4,6 +4,7 @@ import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { loadHistory, removeFromHistory } from '../services/params-history.js';
 import type { ParamsProfile, ModelParams } from '../types.js';
+import { theme } from '../theme.js';
 
 type SelectAction =
   | { type: 'preset'; params: ModelParams | null }
@@ -106,13 +107,13 @@ export function ParamsSelect({ presetName, profiles, onSelect, onCustom, onExper
           const isSelected = i === selectedIndex;
 
           return (
-            <Box key={`${item.name}-${i}`} flexDirection="column" marginBottom={1}>
+            <Box key={`${item.name}-${i}`} flexDirection="column">
               <Box>
-                <Text color={isSelected ? '#d946ef' : undefined}>
+                <Text color={isSelected ? theme.marker : undefined}>
                   {isSelected ? ' › ' : '   '}
                 </Text>
                 <Box width={4}>
-                  <Text color={isSelected ? 'white' : '#a1a1aa'} bold={isSelected}>
+                  <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
                     {i + 1}.
                   </Text>
                 </Box>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
+import { theme } from '../theme.js';
 
 interface StatusBarProps {
   status: 'idle' | 'starting' | 'running' | 'stopped' | 'error';
@@ -14,23 +15,23 @@ export function StatusBar({ status, message }: StatusBarProps) {
   switch (status) {
     case 'starting':
       indicator = <Spinner type="dots" />;
-      color = '#eab308';
+      color = theme.warning;
       break;
     case 'running':
       indicator = <Text>●</Text>;
-      color = '#22c55e';
+      color = theme.success;
       break;
     case 'stopped':
       indicator = <Text>■</Text>;
-      color = '#6b7280';
+      color = theme.neutral;
       break;
     case 'error':
       indicator = <Text>✖</Text>;
-      color = '#ef4444';
+      color = theme.danger;
       break;
     default:
       indicator = <Text>○</Text>;
-      color = '#6b7280';
+      color = theme.neutral;
   }
 
   const statusLabel = status.toUpperCase();
