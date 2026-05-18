@@ -1,0 +1,12 @@
+{
+  "serverDir": "C:\\Users\\Arthur\\ai\\llama.cpp\\build\\bin\\Release",
+  "serverExe": "llama-server.exe",
+  "hfCachePath": "~/.cache/huggingface/hub",
+  "host": "0.0.0.0",
+  "port": 8484,
+  "defaultContext": 64000,
+  "gpuLayers": 99,
+  "parallelSlots": 1,
+  "draftTokens": 2,
+  "contextOptions": [4096, 20000, 64000, 96000, 128000]
+}
