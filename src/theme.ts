@@ -2,7 +2,7 @@ import type { FitStatus } from './types.js';
 
 export const theme = {
   logoText: '#ffffff',
-  logoAccent: '#b1b9f9',
+  logoAccent: '#ff8235',
   accent: '#b1b9f9',
   accentStrong: '#b1b9f9',
   accentMuted: '#8f98db',

@@ -62,7 +62,7 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
               </Text>
             </Box>
             <Box width={16}>
-              <Text color={isSelected ? theme.logoAccent : theme.accent} bold={isSelected}>
+              <Text color={theme.accent} bold={isSelected}>
                 {quant}
               </Text>
             </Box>
@@ -70,7 +70,7 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
               <Text>{String(file.sizeGb).padStart(5)} GB</Text>
             </Box>
             <Box width={10}>
-              <Text color={fitStatusColor(file.fitStatus)} bold>
+              <Text color={fitStatusColor(file.fitStatus)} bold={isSelected}>
                 {fitLabel(file.fitStatus)}
               </Text>
             </Box>
