@@ -21,13 +21,17 @@ interface ModelSelectProps {
   onSettings: () => void;
 }
 
-function metadataSummary(metadata?: ModelMetadata): string {
+function metadataSummary(metadata?: ModelMetadata, fileName?: string): string {
   if (!metadata) return 'metadata estimated';
+  const hasMtp = metadata.nextNPredictLayers
+    ? metadata.nextNPredictLayers > 0
+    : (fileName ?? '').toLowerCase().includes('mtp');
   return [
     metadata.architecture,
     metadata.sizeLabel,
     metadata.primaryQuantType,
     metadata.blockCount ? `${metadata.blockCount} layers` : undefined,
+    hasMtp ? 'MTP' : undefined,
     metadata.isEstimated ? 'estimated' : undefined,
   ].filter(Boolean).join(' · ');
 }
@@ -137,7 +141,7 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
                 </Box>
                 <Box marginLeft={8}>
                   <Text color={theme.accentMuted}>{formatSize(model.sizeBytes)}</Text>
-                  {model.metadata && <Text dimColor>  {metadataSummary(model.metadata)}</Text>}
+                  {model.metadata && <Text dimColor>  {metadataSummary(model.metadata, model.fileName)}</Text>}
                 </Box>
               </Box>
             ))}
