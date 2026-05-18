@@ -11,6 +11,7 @@ export function estimateLayers(sizeGb: number): number {
 
 export interface FitResult {
   estimatedLayers: number;
+  totalLayers: number;
   kvCacheMb: number;
   totalNeededMb: number;
   fitStatus: FitStatus;
@@ -74,11 +75,12 @@ export function calculateFit(
   fileSizeBytes: number,
   contextTokens: number,
   vramMb: number,
-  ramMb: number
+  ramMb: number,
+  totalLayers?: number
 ): FitResult {
   const sizeGb = fileSizeBytes / (1024 ** 3);
   const sizeMb = Math.floor(fileSizeBytes / (1024 * 1024));
-  const layers = estimateLayers(sizeGb);
+  const layers = totalLayers ?? estimateLayers(sizeGb);
 
   const kvBytesPerToken = 4096 * layers;
   const kvMb = Math.floor((contextTokens * kvBytesPerToken) / (1024 * 1024));
@@ -98,5 +100,5 @@ export function calculateFit(
     fitStatus = 'TOO_BIG';
   }
 
-  return { estimatedLayers: layers, kvCacheMb: kvMb, totalNeededMb, fitStatus };
+  return { estimatedLayers: layers, totalLayers: layers, kvCacheMb: kvMb, totalNeededMb, fitStatus };
 }

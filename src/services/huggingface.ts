@@ -1,5 +1,6 @@
 import type { HfFile } from '../types.js';
 import { calculateFit } from './memory.js';
+import { fetchGgufMetadata } from './gguf.js';
 
 interface HfTreeEntry {
   type: string;
@@ -36,13 +37,19 @@ export async function listGgufFiles(
 
   ggufFiles.sort((a, b) => a.size - b.size);
 
+  const metadata = ggufFiles.length > 0
+    ? await fetchGgufMetadata(repo, ggufFiles[0].path).catch(() => null)
+    : null;
+  const totalLayers = metadata?.blockCount;
+
   return ggufFiles.map(entry => {
-    const fit = calculateFit(entry.size, contextTokens, vramMb, ramMb);
+    const fit = calculateFit(entry.size, contextTokens, vramMb, ramMb, totalLayers);
     return {
       path: entry.path,
       sizeBytes: entry.size,
       sizeGb: parseFloat((entry.size / (1024 ** 3)).toFixed(1)),
       estimatedLayers: fit.estimatedLayers,
+      totalLayers: fit.totalLayers,
       kvCacheMb: fit.kvCacheMb,
       totalNeededMb: fit.totalNeededMb,
       fitStatus: fit.fitStatus,

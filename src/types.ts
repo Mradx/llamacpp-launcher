@@ -36,6 +36,7 @@ export interface HfFile {
   sizeBytes: number;
   sizeGb: number;
   estimatedLayers: number;
+  totalLayers: number;
   kvCacheMb: number;
   totalNeededMb: number;
   fitStatus: FitStatus;

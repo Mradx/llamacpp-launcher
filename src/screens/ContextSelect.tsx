@@ -11,6 +11,7 @@ interface ContextSelectProps {
   options: number[];
   defaultContext: number;
   modelSizeBytes?: number;
+  totalLayers?: number;
   hardware?: HardwareInfo | null;
   onSelect: (ctx: number) => void;
   onBack: () => void;
@@ -33,7 +34,7 @@ function fitLabel(status: FitStatus): string {
   }
 }
 
-export function ContextSelect({ options, defaultContext, modelSizeBytes, hardware, onSelect, onBack }: ContextSelectProps) {
+export function ContextSelect({ options, defaultContext, modelSizeBytes, totalLayers, hardware, onSelect, onBack }: ContextSelectProps) {
   const defaultIdx = options.indexOf(defaultContext);
   const [selectedIndex, setSelectedIndex] = useState(defaultIdx >= 0 ? defaultIdx : 2);
 
@@ -65,7 +66,7 @@ export function ContextSelect({ options, defaultContext, modelSizeBytes, hardwar
 
           let fit: ReturnType<typeof calculateFit> | null = null;
           if (canShowFit) {
-            fit = calculateFit(modelSizeBytes!, ctx, hardware!.vramMb, hardware!.ramMb);
+            fit = calculateFit(modelSizeBytes!, ctx, hardware!.vramMb, hardware!.ramMb, totalLayers);
           }
 
           return (

@@ -7,7 +7,8 @@ import { useModels } from './hooks/useModels.js';
 import { detectMtp } from './services/mtp.js';
 import { getProfiles, findPreset } from './services/presets.js';
 import { saveToHistory } from './services/params-history.js';
-import { calculateFit, estimateLayers, calculateKvCacheMb } from './services/memory.js';
+import { estimateLayers, calculateKvCacheMb } from './services/memory.js';
+import { fetchGgufMetadata, readGgufMetadata } from './services/gguf.js';
 import { normalizeHfRef } from './utils/hf-url.js';
 import { ModelSelect } from './screens/ModelSelect.js';
 import { ContextSelect } from './screens/ContextSelect.js';
@@ -44,10 +45,13 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [selectedModel, setSelectedModel] = useState<ModelSelection | null>(null);
   const [contextSize, setContextSize] = useState(config.defaultContext);
   const [modelSizeBytes, setModelSizeBytes] = useState<number | undefined>();
+  const [modelTotalLayers, setModelTotalLayers] = useState<number | undefined>();
   const [gpuLayers, setGpuLayers] = useState(config.gpuLayers);
   const [didShowLayerSelect, setDidShowLayerSelect] = useState(false);
 
-  const handleModelSelect = (model: ModelSelection) => {
+  const handleModelSelect = async (model: ModelSelection) => {
+    setModelTotalLayers(undefined);
+
     if (model.mode === 'hf') {
       const { repo, quant } = normalizeHfRef(model.repo);
       model = { ...model, repo };
@@ -56,9 +60,19 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       }
     }
     if (model.mode === 'local') {
-      try { setModelSizeBytes(statSync(model.path).size); } catch { setModelSizeBytes(undefined); }
+      try {
+        setModelSizeBytes(statSync(model.path).size);
+        setModelTotalLayers(readGgufMetadata(model.path)?.blockCount);
+      } catch {
+        setModelSizeBytes(undefined);
+        setModelTotalLayers(undefined);
+      }
     } else {
       setModelSizeBytes(undefined);
+      if (model.file) {
+        const metadata = await fetchGgufMetadata(model.repo, model.file).catch(() => null);
+        setModelTotalLayers(metadata?.blockCount);
+      }
     }
     setSelectedModel(model);
     setScreen('context-select');
@@ -83,6 +97,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       };
       setSelectedModel(updated);
       setModelSizeBytes(file.sizeBytes);
+      setModelTotalLayers(file.totalLayers);
       goToLayersOrParams(contextSize, file.sizeBytes);
     }
   };
@@ -188,6 +203,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           options={config.contextOptions}
           defaultContext={config.defaultContext}
           modelSizeBytes={modelSizeBytes}
+          totalLayers={modelTotalLayers}
           hardware={hardware}
           onSelect={handleContextSelect}
           onBack={() => setScreen('model-select')}
@@ -206,9 +222,12 @@ function SelectionApp({ onDone }: SelectionAppProps) {
 
       {screen === 'layer-select' && modelSizeBytes && hardware && (
         <LayerSelect
-          totalLayers={estimateLayers(modelSizeBytes / (1024 ** 3))}
+          totalLayers={modelTotalLayers ?? estimateLayers(modelSizeBytes / (1024 ** 3))}
           modelSizeMb={Math.floor(modelSizeBytes / (1024 * 1024))}
-          kvCacheMb={calculateKvCacheMb(contextSize, estimateLayers(modelSizeBytes / (1024 ** 3)))}
+          kvCacheMb={calculateKvCacheMb(
+            contextSize,
+            modelTotalLayers ?? estimateLayers(modelSizeBytes / (1024 ** 3))
+          )}
           vramMb={hardware.vramMb}
           ramMb={hardware.ramMb}
           onSelect={handleLayerSelect}
