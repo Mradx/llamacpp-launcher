@@ -107,7 +107,7 @@ export function ParamsSelect({ presetName, profiles, onSelect, onCustom, onExper
           const isSelected = i === selectedIndex;
 
           return (
-            <Box key={`${item.name}-${i}`} flexDirection="column">
+            <Box key={`${item.name}-${i}`} flexDirection="column" marginBottom={item.desc ? 1 : 0}>
               <Box>
                 <Text color={isSelected ? theme.marker : undefined}>
                   {isSelected ? ' › ' : '   '}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Box, render, useApp } from 'ink';
 import { statSync } from 'node:fs';
 import { loadConfig } from './config.js';
@@ -43,6 +43,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
 
   const [screen, setScreen] = useState<Screen>('model-select');
   const [selectedModel, setSelectedModel] = useState<ModelSelection | null>(null);
+  const [quantLoading, setQuantLoading] = useState(false);
+  const quantCancelledRef = useRef(false);
   const [contextSize, setContextSize] = useState(config.defaultContext);
   const [modelSizeBytes, setModelSizeBytes] = useState<number | undefined>();
   const [modelMetadata, setModelMetadata] = useState<ModelSelection['metadata']>();
@@ -80,6 +82,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const handleContextSelect = (ctx: number) => {
     setContextSize(ctx);
     if (selectedModel?.mode === 'hf' && !selectedModel.file) {
+      setQuantLoading(false);
       setScreen('quant-picker');
     } else {
       goToLayersOrParams(ctx);
@@ -87,15 +90,19 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   };
 
   const handleQuantSelect = async (file: HfFile) => {
+    quantCancelledRef.current = false;
+    setQuantLoading(true);
     if (selectedModel?.mode === 'hf') {
       const fileName = file.path.split('/').pop() || file.path;
+      const label = fileName.replace(/\.gguf$/i, '').replace(/-\d{5}-of-\d{5}$/, '');
       const updated: ModelSelection = {
         ...selectedModel,
         file: file.path,
-        label: fileName.replace('.gguf', ''),
+        label,
         metadata: file.metadata,
       };
       const metadata = await fetchGgufMetadata(selectedModel.repo, file.path).catch(() => null);
+      if (quantCancelledRef.current) return;
       if (metadata) {
         updated.metadata = metadata;
       }
@@ -123,10 +130,17 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     setScreen('params-select');
   };
 
+  const handleQuantBack = () => {
+    quantCancelledRef.current = true;
+    setQuantLoading(false);
+    setScreen('context-select');
+  };
+
   const goBackFromParams = () => {
     if (didShowLayerSelect) {
       setScreen('layer-select');
     } else if (selectedModel?.mode === 'hf' && selectedModel.file) {
+      setQuantLoading(false);
       setScreen('quant-picker');
     } else {
       setScreen('context-select');
@@ -135,6 +149,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
 
   const goBackFromLayers = () => {
     if (selectedModel?.mode === 'hf' && selectedModel.file) {
+      setQuantLoading(false);
       setScreen('quant-picker');
     } else {
       setScreen('context-select');
@@ -227,8 +242,9 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           repo={selectedModel.repo}
           contextTokens={contextSize}
           hardware={hardware}
+          selecting={quantLoading}
           onSelect={handleQuantSelect}
-          onBack={() => setScreen('context-select')}
+          onBack={handleQuantBack}
         />
       )}
 

@@ -5,7 +5,6 @@ import Spinner from 'ink-spinner';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
-import { TitleBlock } from '../components/TitleBlock.js';
 import { CONTENT_MARGIN_X, PAGE_MARGIN_X } from '../layout.js';
 import { formatSize } from '../utils/format.js';
 import { getSiblingModels } from '../services/models.js';
@@ -47,7 +46,7 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
   useInput((input, key) => {
     if (showHfInput || confirmDelete) return;
 
-    if (input === 'q') {
+    if (input === 'q' || input === 'Q' || input === 'й' || input === 'Й') {
       onQuit();
       return;
     }
@@ -89,7 +88,14 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
 
   return (
     <Box flexDirection="column">
-      <Header title="LLAMA.CPP LAUNCHER" subtitle={`Cache: ${hfCachePath}`} />
+      <Header title="LOCAL MODELS" />
+
+      <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+        <Box>
+          <Text dimColor>Cache: </Text>
+          <Text>{hfCachePath}</Text>
+        </Box>
+      </Box>
 
       {loading ? (
         <Box marginLeft={CONTENT_MARGIN_X}>
@@ -98,7 +104,6 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
         </Box>
       ) : (
         <Box flexDirection="column" marginLeft={PAGE_MARGIN_X}>
-          <TitleBlock title="LOCAL MODELS" />
 
           <Box flexDirection="column" marginLeft={CONTENT_MARGIN_X - PAGE_MARGIN_X}>
             {models.length === 0 && (
@@ -108,7 +113,7 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
             )}
 
             {models.map((model, i) => (
-              <Box key={model.path} flexDirection="column">
+              <Box key={model.path} flexDirection="column" marginBottom={1}>
                 <Box>
                   <Text color={i === selectedIndex ? theme.marker : undefined}>
                     {i === selectedIndex ? ' › ' : '   '}
@@ -124,7 +129,9 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
                 </Box>
                 <Box marginLeft={8}>
                   <Text dimColor>{model.fileName}</Text>
-                  <Text color={theme.accentMuted}>  {formatSize(model.sizeBytes)}</Text>
+                </Box>
+                <Box marginLeft={8}>
+                  <Text color={theme.accentMuted}>{formatSize(model.sizeBytes)}</Text>
                   {model.metadata && <Text dimColor>  {metadataSummary(model.metadata)}</Text>}
                 </Box>
               </Box>

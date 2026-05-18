@@ -23,7 +23,7 @@ function truncate(text: string, maxLen: number): string {
 }
 
 function extractQuant(fileName: string): { baseName: string; quant: string } {
-  const base = fileName.replace(/\.gguf$/i, '');
+  const base = fileName.replace(/\.gguf$/i, '').replace(/-\d{5}-of-\d{5}$/, '');
   const match = base.match(/[-_]((?:UD[-_])?(?:I?Q\d[-_\w]*|[BF]F?\d+\w*))$/i);
   if (match) {
     return { baseName: base.slice(0, match.index!), quant: match[1] };

@@ -8,11 +8,46 @@ interface HfTreeEntry {
   size: number;
 }
 
+const SPLIT_PATTERN = /-\d{5}-of-\d{5}$/;
+
 function extractQuantFromPath(path: string): string | undefined {
   const fileName = path.split('/').pop() || path;
-  const base = fileName.replace(/\.gguf$/i, '');
+  const base = fileName.replace(/\.gguf$/i, '').replace(SPLIT_PATTERN, '');
   const match = base.match(/[-_]((?:UD[-_])?(?:I?Q\d[-_\w]*|[BF]F?\d+\w*|Q\d[-_\w]*))$/i);
   return match?.[1]?.replace(/-/g, '_');
+}
+
+function groupSplitFiles(files: HfTreeEntry[]): HfTreeEntry[] {
+  const groups = new Map<string, HfTreeEntry[]>();
+  const singles: HfTreeEntry[] = [];
+
+  for (const file of files) {
+    const base = file.path.replace(/\.gguf$/i, '');
+    if (SPLIT_PATTERN.test(base)) {
+      const groupKey = base.replace(SPLIT_PATTERN, '');
+      const group = groups.get(groupKey) || [];
+      group.push(file);
+      groups.set(groupKey, group);
+    } else {
+      singles.push(file);
+    }
+  }
+
+  const result: HfTreeEntry[] = [...singles];
+  for (const [, parts] of groups) {
+    parts.sort((a, b) => {
+      const aNum = parseInt(a.path.replace(/\.gguf$/i, '').match(SPLIT_PATTERN)![0].slice(1, 6));
+      const bNum = parseInt(b.path.replace(/\.gguf$/i, '').match(SPLIT_PATTERN)![0].slice(1, 6));
+      return aNum - bNum;
+    });
+    result.push({
+      type: 'file',
+      path: parts[0].path,
+      size: parts.reduce((sum, p) => sum + p.size, 0),
+    });
+  }
+
+  return result;
 }
 
 function metadataForFile(baseMetadata: ModelMetadata | null, filePath: string): ModelMetadata | undefined {
@@ -59,12 +94,13 @@ export async function listGgufFiles(
     return true;
   });
 
-  ggufFiles.sort((a, b) => a.size - b.size);
+  const grouped = groupSplitFiles(ggufFiles);
+  grouped.sort((a, b) => a.size - b.size);
 
-  const metadata = ggufFiles.length > 0
-    ? await fetchGgufMetadata(repo, ggufFiles[0].path).catch(() => null)
+  const metadata = grouped.length > 0
+    ? await fetchGgufMetadata(repo, grouped[0].path).catch(() => null)
     : null;
-  return ggufFiles.map(entry => {
+  return grouped.map(entry => {
     const fileMetadata = metadataForFile(metadata, entry.path);
     const fit = calculateFit(entry.size, contextTokens, vramMb, ramMb, fileMetadata);
     return {

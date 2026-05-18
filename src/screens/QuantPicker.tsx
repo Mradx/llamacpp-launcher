@@ -13,11 +13,12 @@ interface QuantPickerProps {
   repo: string;
   contextTokens: number;
   hardware: HardwareInfo | null;
+  selecting?: boolean;
   onSelect: (file: HfFile) => void;
   onBack: () => void;
 }
 
-export function QuantPicker({ repo, contextTokens, hardware, onSelect, onBack }: QuantPickerProps) {
+export function QuantPicker({ repo, contextTokens, hardware, selecting, onSelect, onBack }: QuantPickerProps) {
   const [files, setFiles] = useState<HfFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,12 +52,12 @@ export function QuantPicker({ repo, contextTokens, hardware, onSelect, onBack }:
   }, [repo, contextTokens, hardware]);
 
   useInput((input, key) => {
-    if (loading) return;
-
     if (key.escape) {
       onBack();
       return;
     }
+    if (loading || selecting) return;
+
     if (key.upArrow) {
       setSelectedIndex(i => Math.max(0, i - 1));
     } else if (key.downArrow) {
@@ -102,6 +103,13 @@ export function QuantPicker({ repo, contextTokens, hardware, onSelect, onBack }:
       ) : (
         <Box marginLeft={2}>
           <FitTable files={files} selectedIndex={selectedIndex} />
+        </Box>
+      )}
+
+      {selecting && (
+        <Box marginLeft={2} marginTop={1}>
+          <Text color={theme.warning}><Spinner type="dots" /></Text>
+          <Text> Loading metadata...</Text>
         </Box>
       )}
 
