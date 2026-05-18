@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { runSelection } from './selection.js';
 import { launchServer } from './launch.js';
 
