@@ -42,9 +42,9 @@ function generatePresets(
     }
   };
 
-  if (maxGpu >= totalLayers) {
-    add('Full GPU', totalLayers);
-  } else if (maxGpu > 0) {
+  presets.push({ name: 'Full GPU', layers: 999 });
+  seen.add(999);
+  if (maxGpu > 0 && maxGpu < totalLayers) {
     add('Recommended', maxGpu);
   }
 
@@ -220,7 +220,7 @@ export function LayerSelect({ totalLayers, modelSizeMb, kvCacheMb, kvCacheEstima
                   {p.name}
                 </Text>
               </Box>
-              <Text dimColor>({p.layers} layers)</Text>
+              <Text dimColor>({p.layers >= 999 ? 'all' : `${p.layers} layers`})</Text>
             </Box>
           );
         })}

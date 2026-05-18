@@ -78,6 +78,9 @@ export function launchServer(result: SelectionResult): void {
   const args = buildServerArgs(config, selection);
   const serverPath = join(config.serverDir, config.serverExe);
 
+  console.log(`  ${labelColor('Command')}  ${dim(config.serverExe)} ${dim(args.join(' '))}`);
+  console.log('');
+
   const title = `llama.cpp | ${selection.model.label} | :${config.port}`;
   process.title = title;
 
