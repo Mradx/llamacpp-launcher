@@ -28,6 +28,7 @@ export interface LocalModel {
   path: string;
   fileName: string;
   repoId: string;
+  sizeBytes: number;
 }
 
 export interface HfFile {

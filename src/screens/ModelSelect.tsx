@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
+import { ConfirmDialog } from '../components/ConfirmDialog.js';
+import { formatSize } from '../utils/format.js';
+import { getSiblingModels } from '../services/models.js';
 import type { LocalModel, ModelSelection } from '../types.js';
 
 interface ModelSelectProps {
@@ -11,18 +14,24 @@ interface ModelSelectProps {
   loading: boolean;
   hfCachePath: string;
   onSelect: (model: ModelSelection) => void;
+  onDelete: (model: LocalModel) => void;
   onQuit: () => void;
 }
 
-export function ModelSelect({ models, loading, hfCachePath, onSelect, onQuit }: ModelSelectProps) {
+export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, onQuit }: ModelSelectProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showHfInput, setShowHfInput] = useState(false);
   const [hfInput, setHfInput] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<LocalModel | null>(null);
 
   const totalItems = models.length + 1; // models + HF option
 
+  useEffect(() => {
+    setSelectedIndex(i => Math.min(i, Math.max(0, models.length)));
+  }, [models.length]);
+
   useInput((input, key) => {
-    if (showHfInput) return;
+    if (showHfInput || confirmDelete) return;
 
     if (input === 'q') {
       onQuit();
@@ -33,6 +42,10 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onQuit }: 
       setSelectedIndex(i => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setSelectedIndex(i => Math.min(totalItems - 1, i + 1));
+    } else if (input === 'd' || input === 'D' || input === 'в' || input === 'В') {
+      if (selectedIndex < models.length) {
+        setConfirmDelete(models[selectedIndex]);
+      }
     } else if (key.return) {
       if (selectedIndex < models.length) {
         const model = models[selectedIndex];
@@ -95,6 +108,7 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onQuit }: 
               </Box>
               <Box marginLeft={5}>
                 <Text dimColor>{model.fileName}</Text>
+                <Text dimColor color="#8b5cf6">  {formatSize(model.sizeBytes)}</Text>
               </Box>
             </Box>
           ))}
@@ -126,13 +140,43 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onQuit }: 
         </Box>
       )}
 
-      <Box marginLeft={2}>
-        <KeyHint hints={[
-          { key: '↑↓', label: 'navigate' },
-          { key: '⏎', label: 'select' },
-          { key: 'q', label: 'quit' },
-        ]} />
-      </Box>
+      {!confirmDelete && (
+        <Box marginLeft={2}>
+          <KeyHint hints={[
+            { key: '↑↓', label: 'navigate' },
+            { key: '⏎', label: 'select' },
+            ...(selectedIndex < models.length ? [{ key: 'd', label: 'delete' }] : []),
+            { key: 'q', label: 'quit' },
+          ]} />
+        </Box>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete model from cache?"
+          lines={buildDeleteLines(confirmDelete, models)}
+          onConfirm={() => {
+            onDelete(confirmDelete);
+            setConfirmDelete(null);
+          }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </Box>
   );
+}
+
+function buildDeleteLines(model: LocalModel, allModels: LocalModel[]): string[] {
+  const lines: string[] = [
+    `${model.fileName}  (${formatSize(model.sizeBytes)})`,
+  ];
+  const siblings = getSiblingModels(model, allModels);
+  if (siblings.length > 0) {
+    lines.push('');
+    lines.push('Other variants in this repo (will NOT be deleted):');
+    for (const s of siblings) {
+      lines.push(`  ${s.fileName}  (${formatSize(s.sizeBytes)})`);
+    }
+  }
+  return lines;
 }

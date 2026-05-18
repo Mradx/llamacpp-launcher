@@ -46,7 +46,7 @@ function getModelSizeBytes(model: ModelSelection): number | undefined {
 function SelectionApp({ onDone }: SelectionAppProps) {
   const config = useMemo(() => loadConfig(), []);
   const { hardware, network } = useHardware(config.port);
-  const { models, loading: modelsLoading } = useModels(config.hfCachePath);
+  const { models, loading: modelsLoading, deleteModel } = useModels(config.hfCachePath);
   const { exit } = useApp();
 
   const [screen, setScreen] = useState<Screen>('model-select');
@@ -145,6 +145,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           loading={modelsLoading}
           hfCachePath={config.hfCachePath}
           onSelect={handleModelSelect}
+          onDelete={deleteModel}
           onQuit={handleQuit}
         />
       )}

@@ -1,5 +1,5 @@
-import { readdirSync, statSync, existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { readdirSync, statSync, existsSync, lstatSync, readlinkSync, unlinkSync, rmSync } from 'node:fs';
+import { join, basename, dirname, resolve } from 'node:path';
 import type { LocalModel } from '../types.js';
 
 function walkForGguf(dir: string): string[] {
@@ -60,13 +60,70 @@ export async function scanLocalModels(hfCachePath: string): Promise<LocalModel[]
     const ggufFiles = walkForGguf(repoDir);
 
     for (const filePath of ggufFiles) {
+      let sizeBytes = 0;
+      try { sizeBytes = statSync(filePath).size; } catch {}
       models.push({
         path: filePath,
         fileName: basename(filePath),
         repoId,
+        sizeBytes,
       });
     }
   }
 
   return models;
+}
+
+export function getSiblingModels(model: LocalModel, allModels: LocalModel[]): LocalModel[] {
+  return allModels.filter(m => m.repoId === model.repoId && m.path !== model.path);
+}
+
+function findRepoDir(modelPath: string): string | null {
+  let dir = dirname(modelPath);
+  while (dir && dir !== dirname(dir)) {
+    if (basename(dir).startsWith('models--')) return dir;
+    dir = dirname(dir);
+  }
+  return null;
+}
+
+export function deleteLocalModel(modelPath: string): { freedBytes: number } {
+  const freedBytes = statSync(modelPath).size;
+
+  if (lstatSync(modelPath).isSymbolicLink()) {
+    const linkTarget = readlinkSync(modelPath);
+    const blobPath = resolve(dirname(modelPath), linkTarget);
+
+    unlinkSync(modelPath);
+
+    if (existsSync(blobPath)) {
+      const repoDir = findRepoDir(modelPath);
+      let blobStillReferenced = false;
+
+      if (repoDir) {
+        const remainingFiles = walkForGguf(repoDir);
+        for (const f of remainingFiles) {
+          try {
+            if (lstatSync(f).isSymbolicLink()) {
+              const target = resolve(dirname(f), readlinkSync(f));
+              if (target === blobPath) { blobStillReferenced = true; break; }
+            }
+          } catch {}
+        }
+      }
+
+      if (!blobStillReferenced) {
+        unlinkSync(blobPath);
+      }
+    }
+  } else {
+    unlinkSync(modelPath);
+  }
+
+  const repoDir = findRepoDir(modelPath);
+  if (repoDir && walkForGguf(repoDir).length === 0) {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+
+  return { freedBytes };
 }
