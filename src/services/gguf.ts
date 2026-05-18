@@ -350,6 +350,7 @@ class GgufReader {
       attentionHeadCount: numberFrom(values, key('attention.head_count')) ?? firstNumberEnding(values, '.attention.head_count'),
       attentionHeadCountKv: numberFromOrArrayAverage(values, key('attention.head_count_kv')) ?? firstNumberEnding(values, '.attention.head_count_kv'),
       attentionHeadCountKvByLayer,
+      nextNPredictLayers: numberFrom(values, key('nextn_predict_layers')),
       ropeFreqBase: numberFrom(values, key('rope.freq_base')) ?? firstNumberEnding(values, '.rope.freq_base'),
       ropeDimensionCount: numberFrom(values, key('rope.dimension_count')) ?? firstNumberEnding(values, '.rope.dimension_count'),
       tokenizerModel: stringFrom(values, 'tokenizer.ggml.model'),

@@ -192,6 +192,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       contextSize,
       gpuLayers,
       mtpEnabled: detectMtp(
+        metadata,
         model.mode === 'hf' ? model.repo : model.path,
         model.mode === 'hf' ? model.file : undefined
       ),
@@ -274,7 +275,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
 
       {screen === 'layer-select' && modelSizeBytes && hardware && (
         <LayerSelect
-          totalLayers={effectiveMetadata?.blockCount ?? estimateModelMetadata(modelSizeBytes).blockCount!}
+          totalLayers={(effectiveMetadata?.blockCount ?? estimateModelMetadata(modelSizeBytes).blockCount!) + (effectiveMetadata?.nextNPredictLayers ?? 0)}
           modelSizeMb={Math.floor(modelSizeBytes / (1024 * 1024))}
           kvCacheMb={kvCache?.kvCacheMb ?? 0}
           kvCacheEstimated={kvCache?.isEstimated ?? true}

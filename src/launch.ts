@@ -39,7 +39,10 @@ export function launchServer(result: SelectionResult): void {
   if (selection.metadata) {
     const m = selection.metadata;
     if (m.architecture) row('Architecture', m.architecture);
-    if (m.blockCount) row('Layers', `${m.blockCount}${m.isEstimated ? ' (estimated)' : ''}`);
+    if (m.blockCount) {
+      const mtpSuffix = m.nextNPredictLayers ? ` + ${m.nextNPredictLayers} MTP` : '';
+      row('Layers', `${m.blockCount}${mtpSuffix}${m.isEstimated ? ' (estimated)' : ''}`);
+    }
     if (m.contextLength) row('Train ctx', formatNumber(m.contextLength));
     if (m.primaryQuantType) row('Quant', m.primaryQuantType);
   }

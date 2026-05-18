@@ -102,7 +102,8 @@ function buildLayerSubtitle(
   kvCacheEstimated: boolean,
   metadata?: ModelMetadata
 ): string {
-  const parts = [`${totalLayers} layers${metadata?.isEstimated ? ' estimated' : ''}`];
+  const mtpSuffix = metadata?.nextNPredictLayers ? ` + ${metadata.nextNPredictLayers} MTP` : '';
+  const parts = [`${totalLayers} layers${mtpSuffix}${metadata?.isEstimated ? ' estimated' : ''}`];
   if (metadata?.contextLength) {
     parts.push(`train ctx ${formatNumber(metadata.contextLength)}`);
   }

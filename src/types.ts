@@ -39,6 +39,7 @@ export interface ModelMetadata {
   attentionHeadCount?: number;
   attentionHeadCountKv?: number;
   attentionHeadCountKvByLayer?: number[];
+  nextNPredictLayers?: number;
   ropeFreqBase?: number;
   ropeDimensionCount?: number;
   tokenizerModel?: string;
