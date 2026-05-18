@@ -146,7 +146,7 @@ export function ModelSelect({ models, loading, hfCachePath, onSelect, onDelete, 
               </Box>
             ))}
 
-            <Box marginTop={models.length > 0 ? 1 : 0}>
+            <Box>
               <Text color={selectedIndex === hfIndex ? theme.marker : undefined}>
                 {selectedIndex === hfIndex ? ' › ' : '   '}
               </Text>

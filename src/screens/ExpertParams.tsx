@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import TextInput from 'ink-text-input';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { parseRawArgs, findUnknownArgs } from '../services/known-params.js';
@@ -11,8 +10,87 @@ interface ExpertParamsProps {
   onBack: () => void;
 }
 
+function normalizeInputFragment(value: string): string {
+  return value.replace(/\r\n?/g, '\n');
+}
+
+function getCursorLine(lines: string[], cursorOffset: number): { lineIndex: number; column: number } {
+  let remaining = cursorOffset;
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    if (remaining <= line.length) {
+      return { lineIndex, column: remaining };
+    }
+    remaining -= line.length + 1;
+  }
+  const lastLineIndex = Math.max(0, lines.length - 1);
+  return { lineIndex: lastLineIndex, column: lines[lastLineIndex]?.length ?? 0 };
+}
+
+function getCursorOffsetForLine(lines: string[], lineIndex: number, column: number): number {
+  let offset = 0;
+  for (let index = 0; index < lineIndex; index++) {
+    offset += lines[index].length + 1;
+  }
+  return offset + Math.min(column, lines[lineIndex]?.length ?? 0);
+}
+
+function renderInputLine(line: string, cursorColumn: number | null, placeholder?: string) {
+  if (cursorColumn === null) {
+    return <Text>{line || ' '}</Text>;
+  }
+
+  if (line.length === 0 && placeholder) {
+    return (
+      <Text>
+        <Text inverse>{placeholder[0] ?? ' '}</Text>
+        <Text dimColor>{placeholder.slice(1)}</Text>
+      </Text>
+    );
+  }
+
+  const before = line.slice(0, cursorColumn);
+  const cursorChar = line[cursorColumn] ?? ' ';
+  const after = line.slice(cursorColumn + (line[cursorColumn] ? 1 : 0));
+
+  return (
+    <Text>
+      {before}
+      <Text inverse>{cursorChar}</Text>
+      {after}
+    </Text>
+  );
+}
+
+interface MultilineArgsInputProps {
+  value: string;
+  cursorOffset: number;
+  placeholder: string;
+}
+
+function MultilineArgsInput({ value, cursorOffset, placeholder }: MultilineArgsInputProps) {
+  const lines = value.split('\n');
+  const { lineIndex: cursorLineIndex, column } = getCursorLine(lines, cursorOffset);
+
+  return (
+    <Box flexDirection="column" marginLeft={2}>
+      {lines.map((line, lineIndex) => (
+        <Box key={`${lineIndex}-${line}`}>
+          <Text color={theme.accent} bold>{lineIndex === 0 ? '> ' : '  '}</Text>
+          {renderInputLine(
+            line,
+            lineIndex === cursorLineIndex ? column : null,
+            value.length === 0 && lineIndex === 0 ? placeholder : undefined,
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
   const [input, setInput] = useState('');
+  const [cursorOffset, setCursorOffset] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
   const [unknownArgs, setUnknownArgs] = useState<string[]>([]);
   const [parsedArgs, setParsedArgs] = useState<string[]>([]);
@@ -30,6 +108,61 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
 
     if (key.escape) {
       onBack();
+      return;
+    }
+
+    if (key.return) {
+      handleSubmit(input);
+      return;
+    }
+
+    if (key.leftArrow) {
+      setCursorOffset(offset => Math.max(0, offset - 1));
+      return;
+    }
+
+    if (key.rightArrow) {
+      setCursorOffset(offset => Math.min(input.length, offset + 1));
+      return;
+    }
+
+    if (key.upArrow || key.downArrow) {
+      const lines = input.split('\n');
+      const cursor = getCursorLine(lines, cursorOffset);
+      const nextLineIndex = key.upArrow
+        ? Math.max(0, cursor.lineIndex - 1)
+        : Math.min(lines.length - 1, cursor.lineIndex + 1);
+      setCursorOffset(getCursorOffsetForLine(lines, nextLineIndex, cursor.column));
+      return;
+    }
+
+    if (key.backspace) {
+      if (cursorOffset > 0) {
+        setInput(`${input.slice(0, cursorOffset - 1)}${input.slice(cursorOffset)}`);
+        setCursorOffset(cursorOffset - 1);
+      }
+      return;
+    }
+
+    if (key.delete) {
+      if (cursorOffset < input.length) {
+        setInput(`${input.slice(0, cursorOffset)}${input.slice(cursorOffset + 1)}`);
+      }
+      return;
+    }
+
+    if (key.tab || (key.shift && key.tab)) {
+      return;
+    }
+
+    if (key.ctrl && inputChar !== 'j') {
+      return;
+    }
+
+    const fragment = key.ctrl && inputChar === 'j' ? '\n' : normalizeInputFragment(inputChar);
+    if (fragment.length > 0) {
+      setInput(`${input.slice(0, cursorOffset)}${fragment}${input.slice(cursorOffset)}`);
+      setCursorOffset(cursorOffset + fragment.length);
     }
   });
 
@@ -57,22 +190,17 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
 
       <Box flexDirection="column" marginLeft={2} marginBottom={1}>
         <Text dimColor>Examples:</Text>
-        <Text dimColor>  --temp 0.8 --top-k 40 --top-p 0.95 --min-p 0.05</Text>
-        <Text dimColor>  --mirostat 2 --mirostat-lr 0.1 --mirostat-ent 5.0</Text>
-        <Text dimColor>  --dynatemp-range 0.5 --repeat-penalty 1.1</Text>
+        <Text dimColor>  --temp 0.8 --top-p 0.95 --top-k 40 --min-p 0.05</Text>
+        <Text dimColor>  --presence-penalty 1.5 --frequency-penalty 0.5 --repeat-penalty 1.1</Text>
         <Text dimColor>  (empty = no sampling params)</Text>
       </Box>
 
       {!showConfirm && (
-        <Box marginLeft={2}>
-          <Text color={theme.accent} bold>{'> '}</Text>
-          <TextInput
-            value={input}
-            onChange={setInput}
-            onSubmit={handleSubmit}
-            placeholder="--temp 0.8 --top-k 40 ..."
-          />
-        </Box>
+        <MultilineArgsInput
+          value={input}
+          cursorOffset={cursorOffset}
+          placeholder="--temp 0.8 --top-k 40 ..."
+        />
       )}
 
       {showConfirm && (
@@ -102,6 +230,7 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
         <Box marginLeft={2}>
           <KeyHint hints={[
             { key: '⏎', label: 'submit' },
+            { key: 'ctrl+j', label: 'new line' },
             { key: 'esc', label: 'back' },
           ]} />
         </Box>
