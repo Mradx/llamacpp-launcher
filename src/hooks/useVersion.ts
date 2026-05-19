@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   getLocalVersion,
   getLatestRelease,
@@ -11,9 +11,11 @@ import {
 export function useVersion(llamaCppDir: string) {
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
 
     const local = getLocalVersion(llamaCppDir);
     if (!local) {
@@ -31,7 +33,9 @@ export function useVersion(llamaCppDir: string) {
     });
 
     return () => { cancelled = true; };
-  }, [llamaCppDir]);
+  }, [llamaCppDir, refreshKey]);
 
-  return { version, loading };
+  const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
+
+  return { version, loading, refresh };
 }

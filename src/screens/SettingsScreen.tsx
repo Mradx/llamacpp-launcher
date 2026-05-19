@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
+import Spinner from 'ink-spinner';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { validateLlamaCppDir, saveUserConfig } from '../config.js';
+import { useInstaller } from '../hooks/useInstaller.js';
 import type { StoredConfig } from '../types.js';
 import { theme } from '../theme.js';
 
 interface SettingsScreenProps {
   currentConfig: StoredConfig;
-  onDone: (saved: boolean) => void;
+  onDone: (saved: boolean, updated?: boolean) => void;
 }
 
 const HOST_OPTIONS = [
@@ -37,13 +39,15 @@ const FIELDS: FieldDef[] = [
   { key: 'draftTokens', label: 'Draft tokens', desc: 'Speculative decoding draft tokens', type: 'numeric', min: 0, max: 16 },
 ];
 
-const TOTAL_ITEMS = FIELDS.length + 2; // fields + save + discard
+const TOTAL_ITEMS = FIELDS.length + 3; // fields + update + save + discard
 
 export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [pathStatus, setPathStatus] = useState('');
+  const [updating, setUpdating] = useState(false);
+  const { startUpdate, progress: updateProgress, installing: updateRunning, error: updateError, completed: updateCompleted } = useInstaller();
 
   const [values, setValues] = useState<Record<FieldKey, string | number>>({
     llamaCppDir: currentConfig.llamaCppDir,
@@ -73,7 +77,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
       draftTokens: Number(values.draftTokens),
     };
     saveUserConfig(config);
-    onDone(true);
+    onDone(true, updateCompleted);
   };
 
   const submitTextEdit = (value: string) => {
@@ -97,9 +101,11 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
     }
 
     if (key.escape) {
-      onDone(false);
+      onDone(false, updateCompleted);
       return;
     }
+
+    if (updateRunning) return;
 
     if (key.upArrow) {
       setSelectedIndex(i => Math.max(0, i - 1));
@@ -113,6 +119,12 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
           setEditing(true);
         }
       } else if (selectedIndex === FIELDS.length) {
+        const dir = String(values.llamaCppDir);
+        if (dir) {
+          setUpdating(true);
+          startUpdate(dir);
+        }
+      } else if (selectedIndex === FIELDS.length + 1) {
         handleSave();
       } else {
         onDone(false);
@@ -202,20 +214,49 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
           );
         })}
 
+        <Box marginTop={1} flexDirection="column">
+          <Box>
+            <Text color={selectedIndex === FIELDS.length ? theme.marker : undefined}>
+              {selectedIndex === FIELDS.length ? ' › ' : '   '}
+            </Text>
+            <Text color={selectedIndex === FIELDS.length ? theme.accent : theme.textMuted} bold={selectedIndex === FIELDS.length}>
+              Update llama.cpp (git pull + rebuild)
+            </Text>
+            {updating && updateRunning && (
+              <Box marginLeft={1}>
+                <Text color={theme.accent}><Spinner type="dots" /></Text>
+                <Text dimColor> {updateProgress?.message || 'Updating...'}</Text>
+              </Box>
+            )}
+          </Box>
+          {updating && updateCompleted && (
+            <Box marginLeft={3}>
+              <Text color={theme.success}> Update complete!</Text>
+            </Box>
+          )}
+          {updating && updateError && (
+            <Box marginLeft={3} flexDirection="column">
+              {updateError.split('\n').slice(0, 5).map((line, i) => (
+                <Text key={i} color={theme.danger}> {line}</Text>
+              ))}
+            </Box>
+          )}
+        </Box>
+
         <Box marginTop={1}>
-          <Text color={selectedIndex === FIELDS.length ? theme.marker : undefined}>
-            {selectedIndex === FIELDS.length ? ' › ' : '   '}
+          <Text color={selectedIndex === FIELDS.length + 1 ? theme.marker : undefined}>
+            {selectedIndex === FIELDS.length + 1 ? ' › ' : '   '}
           </Text>
-          <Text color={selectedIndex === FIELDS.length ? theme.success : theme.textMuted} bold={selectedIndex === FIELDS.length}>
+          <Text color={selectedIndex === FIELDS.length + 1 ? theme.success : theme.textMuted} bold={selectedIndex === FIELDS.length + 1}>
             Save and return
           </Text>
         </Box>
 
         <Box>
-          <Text color={selectedIndex === FIELDS.length + 1 ? theme.marker : undefined}>
-            {selectedIndex === FIELDS.length + 1 ? ' › ' : '   '}
+          <Text color={selectedIndex === FIELDS.length + 2 ? theme.marker : undefined}>
+            {selectedIndex === FIELDS.length + 2 ? ' › ' : '   '}
           </Text>
-          <Text color={selectedIndex === FIELDS.length + 1 ? theme.danger : theme.textMuted} bold={selectedIndex === FIELDS.length + 1}>
+          <Text color={selectedIndex === FIELDS.length + 2 ? theme.danger : theme.textMuted} bold={selectedIndex === FIELDS.length + 2}>
             Discard changes
           </Text>
         </Box>

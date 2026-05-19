@@ -44,7 +44,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const config = useMemo(() => loadConfig(), [configVersion]);
   const { hardware, network } = useHardware(config.port);
   const { models, loading: modelsLoading, deleteModel, refreshModels } = useModels(config.hfCachePath);
-  const { version } = useVersion(config.llamaCppDir);
+  const { version, refresh: refreshVersion } = useVersion(config.llamaCppDir);
   const { exit } = useApp();
 
   const [screen, setScreen] = useState<Screen>('model-select');
@@ -227,10 +227,13 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     setShowSettings(true);
   };
 
-  const handleSettingsDone = (saved: boolean) => {
+  const handleSettingsDone = (saved: boolean, updated?: boolean) => {
     setShowSettings(false);
     if (saved) {
       setConfigVersion(v => v + 1);
+    }
+    if (updated) {
+      refreshVersion();
     }
   };
 
