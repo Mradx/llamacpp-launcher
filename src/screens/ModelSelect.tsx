@@ -53,8 +53,20 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
     setSelectedIndex(i => Math.min(i, Math.max(0, models.length)));
   }, [models.length]);
 
+  const cancelHfInput = () => {
+    setShowHfInput(false);
+    setHfInput('');
+  };
+
   useInput((input, key) => {
-    if (showHfInput || confirmDelete) return;
+    if (showHfInput) {
+      if (key.escape) {
+        cancelHfInput();
+      }
+      return;
+    }
+
+    if (confirmDelete) return;
 
     if (input === 'r' || input === 'R' || input === '\u043a' || input === '\u041a') {
       onRefresh();
@@ -99,8 +111,7 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
         label: value.trim().split('/').pop() || value.trim(),
       });
     }
-    setShowHfInput(false);
-    setHfInput('');
+    cancelHfInput();
   };
 
   return (
@@ -199,7 +210,10 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
 
       {!confirmDelete && (
         <Box marginLeft={CONTENT_MARGIN_X}>
-          <KeyHint hints={[
+          <KeyHint hints={showHfInput ? [
+            { key: 'enter', label: 'submit' },
+            { key: 'esc', label: 'cancel' },
+          ] : [
             { key: '↑↓', label: 'navigate' },
             { key: '⏎', label: 'select' },
             { key: 'r', label: loading ? 'refreshing' : 'refresh' },
