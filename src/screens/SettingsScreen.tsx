@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { existsSync, statSync } from 'node:fs';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
@@ -49,6 +49,17 @@ const SAVE_INDEX = FIELDS.length + 2;
 const DISCARD_INDEX = FIELDS.length + 3;
 const TOTAL_ITEMS = FIELDS.length + 4; // fields + update + rebuild + save + discard
 const TABS_INDEX = -1;
+
+// Render both tabs at the same height. Ink decides between an in-place
+// differential redraw (log-update) and a full terminal clear purely from
+// whether the frame height reaches the terminal height (see ink's onRender:
+// `outputHeight >= stdout.rows`). If one tab overflows the terminal while the
+// other fits, ink flips between those two modes and log-update's cached line
+// count goes stale, which leaves the screen frozen on the previous tab. A
+// shared min-height keeps the frame height constant across both tabs and also
+// absorbs the extra line that the "Already up to date." / status messages add,
+// so finishing an update never changes the height either.
+const TAB_BODY_HEIGHT = 21;
 
 type InstallAction = 'update' | 'rebuild';
 type SettingsTab = 'config' | 'info';
@@ -151,7 +162,10 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
   const activeTab = TABS[activeTabIndex].key;
   const hostIdx = HOST_OPTIONS.findIndex(o => o.value === values.host);
   const dataRoot = getDataRoot();
-  const stateFiles = activeTab === 'info' ? STATE_FILES.map(getStateFileInfo) : [];
+  const stateFiles = useMemo(
+    () => (activeTab === 'info' ? STATE_FILES.map(getStateFileInfo) : []),
+    [activeTab],
+  );
 
   const switchTab = () => {
     setEditing(false);
@@ -314,7 +328,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
       />
 
       {activeTab === 'config' ? (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} minHeight={TAB_BODY_HEIGHT}>
           {FIELDS.map((field, i) => {
             const isSelected = i === selectedIndex;
             const value = values[field.key];
@@ -455,7 +469,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
           </Box>
         </Box>
       ) : (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} minHeight={TAB_BODY_HEIGHT}>
           <Box flexDirection="column" marginBottom={1}>
             <Text color={theme.textMuted} bold>State root</Text>
             <Text>{dataRoot}</Text>
