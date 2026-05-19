@@ -1,4 +1,4 @@
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir, availableParallelism } from 'node:os';
@@ -58,6 +58,54 @@ function tryExec(cmd: string): string | null {
     }).trim();
   } catch {
     return null;
+  }
+}
+
+function getGitCandidates(): string[] {
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const programFilesX86 = process.env['ProgramFiles(x86)'];
+  const localAppData = process.env.LOCALAPPDATA;
+  return [
+    join(programFiles, 'Git', 'cmd', 'git.exe'),
+    programFilesX86 ? join(programFilesX86, 'Git', 'cmd', 'git.exe') : null,
+    localAppData ? join(localAppData, 'Programs', 'Git', 'cmd', 'git.exe') : null,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+}
+
+function getGitVersion(gitCmd: string): string | null {
+  if (gitCmd === 'git') return tryExec('git --version');
+  return tryExec(`"${gitCmd}" --version`);
+}
+
+function resolveGitCommand(): string | null {
+  refreshProcessPath();
+
+  if (getGitVersion('git')) return 'git';
+
+  for (const candidate of getGitCandidates()) {
+    if (!existsSync(candidate)) continue;
+    if (getGitVersion(candidate)) {
+      prependPath(dirname(candidate));
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function execGit(gitCmd: string, args: string[], cwd: string): string {
+  try {
+    return execFileSync(gitCmd, args, {
+      cwd,
+      encoding: 'utf-8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (err) {
+    const stderr = err && typeof err === 'object' && 'stderr' in err
+      ? String((err as { stderr?: unknown }).stderr || '').trim()
+      : '';
+    throw new Error(stderr || `Git command failed: git ${args.join(' ')}`);
   }
 }
 
@@ -150,29 +198,8 @@ function spawnWithProgress(
 // ── Prerequisite Detection ──
 
 function detectGit(): PrerequisiteStatus['git'] {
-  refreshProcessPath();
-
-  let raw = tryExec('git --version');
-  if (!raw) {
-    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-    const programFilesX86 = process.env['ProgramFiles(x86)'];
-    const localAppData = process.env.LOCALAPPDATA;
-    const candidates = [
-      join(programFiles, 'Git', 'cmd', 'git.exe'),
-      programFilesX86 ? join(programFilesX86, 'Git', 'cmd', 'git.exe') : null,
-      localAppData ? join(localAppData, 'Programs', 'Git', 'cmd', 'git.exe') : null,
-    ];
-
-    for (const candidate of candidates) {
-      if (!candidate || !existsSync(candidate)) continue;
-      raw = tryExec(`"${candidate}" --version`);
-      if (raw) {
-        prependPath(dirname(candidate));
-        break;
-      }
-    }
-  }
-
+  const gitCmd = resolveGitCommand();
+  const raw = gitCmd ? getGitVersion(gitCmd) : null;
   if (!raw) return { found: false, version: null };
   const match = raw.match(/(\d+\.\d+[\.\d]*)/);
   return { found: true, version: match ? match[1] : raw };
@@ -1123,15 +1150,23 @@ export async function runFullInstall(
 
 // ── Update Functions ──
 
-export async function pullAndRebuild(
+export async function updateLlamaCpp(
   llamaCppDir: string,
   prereqs: PrerequisiteStatus,
   onProgress: ProgressCallback,
-): Promise<void> {
+): Promise<boolean> {
+  const gitCmd = resolveGitCommand();
+  if (!gitCmd) {
+    throw new Error('Git not found. Install Git or add git.exe to PATH, then reopen the launcher.');
+  }
+
+  onProgress({ phase: 'clone', message: 'Checking current revision...' });
+  const beforePull = execGit(gitCmd, ['rev-parse', 'HEAD'], llamaCppDir);
+
   onProgress({ phase: 'clone', message: 'Pulling latest changes...' });
 
   await spawnWithProgress(
-    'git',
+    gitCmd,
     ['pull', '--progress'],
     { cwd: llamaCppDir },
     (line) => {
@@ -1139,9 +1174,26 @@ export async function pullAndRebuild(
     },
   );
 
+  const afterPull = execGit(gitCmd, ['rev-parse', 'HEAD'], llamaCppDir);
+
+  if (afterPull === beforePull) {
+    onProgress({ phase: 'done', message: 'Already up to date.' });
+    return false;
+  }
+
+  await rebuildLlamaCpp(llamaCppDir, prereqs, onProgress);
+  onProgress({ phase: 'done', message: 'Update complete!' });
+  return true;
+}
+
+export async function rebuildLlamaCpp(
+  llamaCppDir: string,
+  prereqs: PrerequisiteStatus,
+  onProgress: ProgressCallback,
+): Promise<void> {
   await buildWebUI(llamaCppDir, onProgress);
   await cmakeConfigure(llamaCppDir, prereqs, onProgress);
   await cmakeBuild(llamaCppDir, prereqs, onProgress);
 
-  onProgress({ phase: 'done', message: 'Update complete!' });
+  onProgress({ phase: 'done', message: 'Rebuild complete!' });
 }

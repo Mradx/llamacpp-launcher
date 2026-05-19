@@ -4,7 +4,8 @@ import {
   getCriticalMissing,
   canAutoInstall,
   runFullInstall,
-  pullAndRebuild,
+  updateLlamaCpp,
+  rebuildLlamaCpp,
   autoInstallPrereq,
   type PrerequisiteStatus,
   type InstallProgress,
@@ -17,6 +18,7 @@ export function useInstaller() {
   const [progress, setProgress] = useState<InstallProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
+  const [sourceChanged, setSourceChanged] = useState(false);
 
   const detect = useCallback(() => {
     setChecking(true);
@@ -35,9 +37,11 @@ export function useInstaller() {
     if (!prereqs) return;
     setInstalling(true);
     setError(null);
+    setProgress(null);
     setCompleted(false);
     try {
       await runFullInstall(targetDir, prereqs, setProgress);
+      setSourceChanged(true);
       setCompleted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -50,9 +54,27 @@ export function useInstaller() {
     if (!prereqs) return;
     setInstalling(true);
     setError(null);
+    setProgress(null);
     setCompleted(false);
     try {
-      await pullAndRebuild(llamaCppDir, prereqs, setProgress);
+      const changed = await updateLlamaCpp(llamaCppDir, prereqs, setProgress);
+      setSourceChanged(prev => prev || changed);
+      setCompleted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInstalling(false);
+    }
+  }, [prereqs]);
+
+  const startRebuild = useCallback(async (llamaCppDir: string) => {
+    if (!prereqs) return;
+    setInstalling(true);
+    setError(null);
+    setProgress(null);
+    setCompleted(false);
+    try {
+      await rebuildLlamaCpp(llamaCppDir, prereqs, setProgress);
       setCompleted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -106,8 +128,10 @@ export function useInstaller() {
     progress,
     error,
     completed,
+    sourceChanged,
     startInstall,
     startUpdate,
+    startRebuild,
     installPrereq,
     installAllMissing,
     redetect: detect,

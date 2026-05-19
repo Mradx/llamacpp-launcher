@@ -30,7 +30,8 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
   const [llamaCppDir, setLlamaCppDir] = useState('');
   const [pathError, setPathError] = useState('');
   const [hostIndex, setHostIndex] = useState(1);
-  const [portValue, setPortValue] = useState('8484');
+  const [defaultPort] = useState(() => String(loadStoredConfig().port));
+  const [portValue, setPortValue] = useState('');
   const [portError, setPortError] = useState('');
 
   const handlePathSubmit = (value: string) => {
@@ -46,8 +47,9 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
   };
 
   const handlePortSubmit = (value: string) => {
-    const port = parseInt(value, 10);
-    if (isNaN(port) || port < 1 || port > 65535) {
+    const portText = value.trim() || defaultPort;
+    const port = Number(portText);
+    if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) {
       setPortError('Port must be between 1 and 65535');
       return;
     }
@@ -81,6 +83,10 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
         setStep('port');
       } else if (key.escape) {
         setStep(llamaCppDir ? 'path' : 'path-choice');
+      }
+    } else if (step === 'port') {
+      if (key.escape) {
+        setStep('host');
       }
     }
   });
@@ -190,13 +196,16 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
           <Box marginTop={1}>
             <Text>Server port:</Text>
           </Box>
+          <Box marginTop={0}>
+            <Text dimColor>  Default: {defaultPort}</Text>
+          </Box>
           <Box marginTop={1}>
             <Text color={theme.accent}>{' › '}</Text>
             <TextInput
               value={portValue}
               onChange={setPortValue}
               onSubmit={handlePortSubmit}
-              placeholder="8484"
+              placeholder={defaultPort}
             />
           </Box>
           {portError && (
@@ -204,7 +213,7 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
               <Text color={theme.danger}> {portError}</Text>
             </Box>
           )}
-          <KeyHint hints={[{ key: '⏎', label: 'save & continue' }]} />
+          <KeyHint hints={[{ key: '⏎', label: 'save & continue' }, { key: 'esc', label: 'back' }]} />
         </Box>
       )}
     </Box>
