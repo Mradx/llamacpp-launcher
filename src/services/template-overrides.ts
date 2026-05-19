@@ -1,13 +1,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ModelSelection } from '../types.js';
+import { getDataPath } from '../storage.js';
 
 const OVERRIDES_FILE = 'template-overrides.json';
 
 type OverridesData = Record<string, string>;
 
 function getFilePath(): string {
-  return join(process.cwd(), OVERRIDES_FILE);
+  return getDataPath(OVERRIDES_FILE);
 }
 
 export function getModelKey(model: ModelSelection): string {

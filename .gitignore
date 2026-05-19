@@ -1,4 +1,15 @@
 node_modules/
 dist/
+.npm-cache*/
+tmp-install/
+.llamacpp-launcher-data/
+install-and-run.log
+run.log
+.claude/
+.idea/
 config.json
+params-history.json
+template-overrides.json
+*.tgz
 *.log
+.npm-pack-version.json

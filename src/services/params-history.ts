@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ModelParams } from '../types.js';
+import { getDataPath } from '../storage.js';
 
 const HISTORY_FILE = 'params-history.json';
 const MAX_ENTRIES = 3;
@@ -23,7 +23,7 @@ interface HistoryData {
 }
 
 function getHistoryPath(): string {
-  return join(process.cwd(), HISTORY_FILE);
+  return getDataPath(HISTORY_FILE);
 }
 
 export function loadHistory(): HistoryEntry[] {

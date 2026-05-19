@@ -5,9 +5,9 @@ import Spinner from 'ink-spinner';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { useInstaller } from '../hooks/useInstaller.js';
-import { getMissingPrerequisites, canAutoInstall, type PrerequisiteStatus, type InstallPhase } from '../services/installer.js';
+import { getCriticalMissing, getOptionalMissing, canAutoInstall, NODE_WEB_UI_REQUIREMENT, type PrerequisiteStatus, type InstallPhase } from '../services/installer.js';
 import { theme } from '../theme.js';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 interface InstallWizardProps {
@@ -31,19 +31,32 @@ function phaseIndex(phase: InstallPhase): number {
   return PHASES.indexOf(phase);
 }
 
+function formatElapsed(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function isInput(input: string, ...keys: string[]): boolean {
+  return keys.includes(input);
+}
+
 export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
   const {
     prereqs, checking, installing, progress,
-    error, completed, startInstall, installPrereq, redetect,
+    error, completed, startInstall, installPrereq, installAllMissing, redetect,
   } = useInstaller();
 
   const [step, setStep] = useState<WizardStep>('prereq-check');
-  const [targetDir, setTargetDir] = useState('C:\\ai\\llama.cpp');
+  const [targetDir, setTargetDir] = useState(() => `${process.env.USERPROFILE || 'C:\\Users\\Default'}\\llama.cpp`);
   const [dirError, setDirError] = useState('');
   const [autoInstalling, setAutoInstalling] = useState<string | null>(null);
+  const [autoInstallError, setAutoInstallError] = useState<string | null>(null);
 
-  const missing = prereqs ? getMissingPrerequisites(prereqs) : [];
-  const criticalMissing = missing.filter(m => m !== 'NVM');
+  const criticalMissing = prereqs ? getCriticalMissing(prereqs) : [];
+  const optionalMissing = prereqs ? getOptionalMissing(prereqs) : [];
+  const allMissing = [...criticalMissing, ...optionalMissing];
   const canProceed = prereqs && !checking && criticalMissing.length === 0;
 
   useInput((input, key) => {
@@ -52,14 +65,23 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
         onBack();
       } else if (key.return && canProceed) {
         setStep('select-dir');
-      } else if (input === 'r' || input === 'R') {
+      } else if (isInput(input, 'r', 'R', '\u043a', '\u041a')) {
         redetect();
-      } else if (input === 'i' || input === 'I') {
-        const autoInstallable = missing.find(m => canAutoInstall(m));
-        if (autoInstallable) {
-          setAutoInstalling(autoInstallable);
-          installPrereq(autoInstallable as 'Git' | 'NVM').then(() => {
+      } else if (isInput(input, 'i', 'I', '\u0448', '\u0428')) {
+        const firstItem = criticalMissing.find(m => canAutoInstall(m));
+        if (firstItem) {
+          setAutoInstalling(firstItem);
+          setAutoInstallError(null);
+          installAllMissing((name) => {
+            setAutoInstalling(name);
+          }).then((result) => {
             setAutoInstalling(null);
+            if (!result.ok) {
+              setAutoInstallError(result.error || 'Auto-install failed');
+            }
+          }).catch((err) => {
+            setAutoInstalling(null);
+            setAutoInstallError(err instanceof Error ? err.message : String(err));
           });
         }
       }
@@ -111,8 +133,13 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
     }
     const parent = dirname(trimmed);
     if (!existsSync(parent)) {
-      setDirError(`Parent directory does not exist: ${parent}`);
-      return;
+      try {
+        mkdirSync(parent, { recursive: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setDirError(`Cannot create parent directory: ${parent}\n${message}`);
+        return;
+      }
     }
     setDirError('');
     setTargetDir(trimmed);
@@ -150,15 +177,20 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
                   label="CUDA Toolkit"
                   found={prereqs.cuda.found}
                   detail={prereqs.cuda.version ? `v${prereqs.cuda.version}` : undefined}
-                  hint={!prereqs.cuda.found ? 'https://developer.nvidia.com/cuda-toolkit' : undefined}
+                  hint={!prereqs.cuda.found ? 'Optional: will build CPU-only without CUDA' : undefined}
+                  optional
                 />
                 <PrereqLine
                   label="Node.js"
-                  found={prereqs.node.found}
+                  found={prereqs.node.found && prereqs.node.supported}
                   detail={prereqs.node.version
                     ? `v${prereqs.node.version}${prereqs.node.nvmFound ? ' (NVM)' : ''}`
                     : undefined}
-                  hint={!prereqs.node.found ? 'Optional: winget install CoreyButler.NVMforWindows' : undefined}
+                  hint={!prereqs.node.found
+                    ? 'Optional: needed for web UI build'
+                    : !prereqs.node.supported
+                      ? `Requires Node.js ${NODE_WEB_UI_REQUIREMENT} for web UI build`
+                      : undefined}
                   optional
                 />
                 <PrereqLine
@@ -167,6 +199,8 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
                   detail={prereqs.gpu.name
                     ? `${prereqs.gpu.name}${prereqs.gpu.arch ? ` (sm_${prereqs.gpu.arch})` : ''}`
                     : undefined}
+                  hint={!prereqs.gpu.name ? 'Optional: will build CPU-only' : undefined}
+                  optional
                 />
 
                 <Box marginTop={1}>
@@ -174,9 +208,36 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
                 </Box>
 
                 {autoInstalling && (
-                  <Box marginTop={1}>
-                    <Text color={theme.accent}><Spinner type="dots" /></Text>
-                    <Text> Installing {autoInstalling} via winget...</Text>
+                  <Box marginTop={1} flexDirection="column">
+                    <Box>
+                      <Text color={theme.accent}><Spinner type="dots" /></Text>
+                      <Text bold> {autoInstalling}</Text>
+                      {progress?.elapsed != null && (
+                        <Text dimColor>  {formatElapsed(progress.elapsed)}</Text>
+                      )}
+                    </Box>
+                    {progress?.message && (
+                      <Box marginLeft={3}>
+                        <Text dimColor>{progress.message}</Text>
+                      </Box>
+                    )}
+                    {progress?.stalled ? (
+                      <Box marginLeft={3}>
+                        <Text color={theme.warning}>{'⚠ '}{progress.detail}</Text>
+                      </Box>
+                    ) : progress?.detail ? (
+                      <Box marginLeft={3}>
+                        <Text dimColor wrap="truncate">{'> '}{progress.detail.slice(0, 70)}</Text>
+                      </Box>
+                    ) : null}
+                  </Box>
+                )}
+
+                {autoInstallError && !autoInstalling && (
+                  <Box marginTop={1} flexDirection="column">
+                    {autoInstallError.split('\n').map((line, i) => (
+                      <Text key={i} color={theme.danger}> {line}</Text>
+                    ))}
                   </Box>
                 )}
 
@@ -185,9 +246,9 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
                     <Text color={theme.danger}>
                       Missing: {criticalMissing.join(', ')}
                     </Text>
-                    <Text dimColor>  Install the missing tools and press [R] to re-check</Text>
-                    {missing.some(m => canAutoInstall(m)) && (
-                      <Text dimColor>  Press [I] to auto-install via winget</Text>
+                    <Text dimColor>{'  Install the missing tools and press [R] to re-check'}</Text>
+                    {criticalMissing.some(m => canAutoInstall(m)) && (
+                      <Text dimColor>{'  Press [I] to auto-install'}</Text>
                     )}
                   </Box>
                 )}
@@ -198,7 +259,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
           <KeyHint hints={[
             ...(canProceed ? [{ key: '⏎', label: 'continue' }] : []),
             { key: 'R', label: 're-check' },
-            ...(missing.some(m => canAutoInstall(m)) ? [{ key: 'I', label: 'auto-install' }] : []),
+            ...(criticalMissing.some(m => canAutoInstall(m)) ? [{ key: 'I', label: 'auto-install' }] : []),
             { key: 'esc', label: 'back' },
           ]} />
         </Box>
@@ -219,7 +280,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
               value={targetDir}
               onChange={setTargetDir}
               onSubmit={handleDirSubmit}
-              placeholder="C:\ai\llama.cpp"
+              placeholder="%USERPROFILE%\\llama.cpp"
             />
           </Box>
           {dirError && (
@@ -241,11 +302,13 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
           <Text color={theme.accent} bold>Confirm Installation</Text>
           <Box marginTop={1} flexDirection="column">
             <ConfirmRow label="Directory" value={targetDir} />
-            <ConfirmRow label="GPU" value={prereqs.gpu.name ?? 'not detected'} />
-            {prereqs.gpu.arch && (
-              <ConfirmRow label="CUDA arch" value={`sm_${prereqs.gpu.arch}`} />
+            <ConfirmRow label="Build mode" value={prereqs.cuda.found ? 'CUDA (GPU accelerated)' : 'CPU-only'} />
+            {prereqs.gpu.name && (
+              <ConfirmRow label="GPU" value={`${prereqs.gpu.name}${prereqs.gpu.arch ? ` (sm_${prereqs.gpu.arch})` : ''}`} />
             )}
-            <ConfirmRow label="CUDA" value={prereqs.cuda.version ? `v${prereqs.cuda.version}` : 'not found'} />
+            {prereqs.cuda.version && (
+              <ConfirmRow label="CUDA" value={`v${prereqs.cuda.version}`} />
+            )}
             <ConfirmRow label="Compiler" value={prereqs.cmake.vsEdition ? `VS 2022 ${prereqs.cmake.vsEdition}` : 'not found'} />
             <ConfirmRow label="Build jobs" value={`-j ${prereqs.cpuCores}`} />
           </Box>

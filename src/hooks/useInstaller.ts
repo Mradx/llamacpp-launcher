@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   detectPrerequisites,
+  getCriticalMissing,
+  canAutoInstall,
   runFullInstall,
   pullAndRebuild,
   autoInstallPrereq,
@@ -59,15 +61,43 @@ export function useInstaller() {
     }
   }, [prereqs]);
 
-  const installPrereq = useCallback(async (name: 'Git' | 'NVM') => {
+  const installPrereq = useCallback(async (name: 'Git' | 'Node.js' | 'Visual Studio 2022'): Promise<{ ok: boolean; error?: string }> => {
     try {
-      const ok = await autoInstallPrereq(name, setProgress);
-      if (ok) detect();
-      return ok;
-    } catch {
-      return false;
+      const result = await autoInstallPrereq(name, setProgress);
+      if (result.ok) detect();
+      return result;
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }, [detect]);
+
+  const installAllMissing = useCallback(async (
+    onStart: (name: string) => void,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      while (true) {
+        const current = detectPrerequisites();
+        setPrereqs(current);
+
+        const missing = getCriticalMissing(current);
+        const next = missing.find(m => canAutoInstall(m));
+        if (!next) break;
+
+        onStart(next);
+
+        const result = await autoInstallPrereq(
+          next as 'Git' | 'Node.js' | 'Visual Studio 2022',
+          setProgress,
+        );
+        if (!result.ok) {
+          return { ok: false, error: result.error || `Failed to install ${next}` };
+        }
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }, []);
 
   return {
     prereqs,
@@ -79,6 +109,7 @@ export function useInstaller() {
     startInstall,
     startUpdate,
     installPrereq,
+    installAllMissing,
     redetect: detect,
   };
 }

@@ -1,12 +1,9 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, dirname, join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { StoredConfig, Config } from './types.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = resolve(__dirname, '..');
+import { getDataPath, getPackageResourcePath } from './storage.js';
 
 const StoredConfigSchema = z.object({
   llamaCppDir: z.string(),
@@ -44,8 +41,8 @@ function migrateOldConfig(raw: Record<string, unknown>): Record<string, unknown>
 }
 
 export function loadStoredConfig(): StoredConfig {
-  const defaultPath = resolve(projectRoot, 'config.default.json');
-  const userPath = resolve(projectRoot, 'config.json');
+  const defaultPath = getPackageResourcePath('config.default.json');
+  const userPath = getDataPath('config.json');
 
   const defaults = JSON.parse(readFileSync(defaultPath, 'utf-8'));
 
@@ -93,7 +90,7 @@ export function loadConfig(): Config {
 }
 
 export function saveUserConfig(config: StoredConfig): void {
-  const userPath = resolve(projectRoot, 'config.json');
+  const userPath = getDataPath('config.json');
   const toSave: Record<string, unknown> = {
     llamaCppDir: config.llamaCppDir,
     hfCachePath: config.hfCachePath,
@@ -107,7 +104,7 @@ export function saveUserConfig(config: StoredConfig): void {
 }
 
 export function isFirstRun(): boolean {
-  const userPath = resolve(projectRoot, 'config.json');
+  const userPath = getDataPath('config.json');
   return !existsSync(userPath);
 }
 
