@@ -1,562 +1,1309 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions DisableDelayedExpansion
 
-color 0B
+title llamacpp-launcher
 
-set "SERVER_DIR=C:\Users\Arthur\ai\llama.cpp\build\bin\Release"
-set "SERVER_EXE=llama-server.exe"
-set "HF_CACHE=%USERPROFILE%\.cache\huggingface\hub"
-set "HOST=0.0.0.0"
-set "PORT=8484"
-set "LAN_IP="
-set "LAN_URL=unavailable"
-set "CONTEXT_SIZE=64000"
-set "GPU_LAYERS=99"
-set "PARALLEL_SLOTS=1"
-set "DRAFT_TOKENS=2"
-set "LOG_FILE=%TEMP%\llama_cpp_server_launcher.log"
+if /i not "%~1"=="--inside-cmd" (
+  cmd /k ""%~f0" --inside-cmd %*"
+  exit /b
+)
 
-set "MODEL_MODE="
-set "MODEL_SOURCE="
-set "MODEL_FLAG="
-set "MODEL_LABEL="
-set "HF_FILE_NAME="
-set "HF_FILE_SIZE="
-set "HF_FILE="
-set "GPU_NAME=Unknown GPU"
-set "CPU_NAME=Unknown CPU"
-set "VRAM_MB=0"
-set "RAM_MB=0"
-set "NVIDIA_SMI="
-set "ENABLE_MTP=0"
-set "MTP_STATUS=disabled"
-set "EXTRA_ARGS="
+shift /1
+set "LAUNCHER_BAT=%~f0"
+set "LAUNCHER_SCRIPT_DIR=%~dp0"
+set "LAUNCHER_RUN_FILE=%TEMP%\llamacpp-launcher-run-%RANDOM%%RANDOM%.cmd"
+set "LAUNCHER_SELF_TEST="
+if /i "%~1"=="--self-test" set "LAUNCHER_SELF_TEST=1"
 
-> "%LOG_FILE%" echo [%DATE% %TIME%] llama.cpp launcher started
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $content=Get-Content -Raw -LiteralPath $env:LAUNCHER_BAT; $marker=':__POWERSHELL_PAYLOAD__'; $idx=$content.LastIndexOf($marker); if($idx -lt 0){ throw 'PowerShell payload marker was not found.' }; $payload=$content.Substring($idx + $marker.Length).TrimStart([char]13,[char]10); $script=[ScriptBlock]::Create($payload); & $script -BatchPath $env:LAUNCHER_BAT -ScriptDir $env:LAUNCHER_SCRIPT_DIR"
+set "PS_EXIT=%ERRORLEVEL%"
 
-call :detect_hardware
-call :detect_network
-call :select_model
-if errorlevel 1 exit /b 1
-
-call :derive_model_label
-call :detect_mtp
-
-set /a _VRAM_GB=VRAM_MB/1024
-set /a _RAM_GB=RAM_MB/1024
-
-set "HARDWARE_LABEL=%GPU_NAME%"
-if not "%CPU_NAME%"=="Unknown CPU" set "HARDWARE_LABEL=%GPU_NAME% + %CPU_NAME%"
-if "%GPU_NAME%"=="Unknown GPU" if not "%CPU_NAME%"=="Unknown CPU" set "HARDWARE_LABEL=%CPU_NAME%"
-
-title llama.cpp Server ^| %MODEL_LABEL% ^| %GPU_NAME% ^| :%PORT%
-
-cls
-echo.
-echo  ============================================================
-echo   LLAMA.CPP SERVER
-echo  ============================================================
-echo.
-echo   Engine       llama.cpp
-echo   Model        %MODEL_LABEL%
-echo   Hardware     %HARDWARE_LABEL%
-echo   Memory       %_VRAM_GB% GB VRAM, %_RAM_GB% GB RAM
-echo   Local URL    http://localhost:%PORT%
-echo   LAN URL      %LAN_URL%
-echo   Bind         %HOST%:%PORT% (all interfaces)
-echo.
-echo  ------------------------------------------------------------
-echo   Configuration
-echo  ------------------------------------------------------------
-echo   Source type  %MODEL_MODE%
-echo   Model source %MODEL_SOURCE%
-if defined HF_FILE_NAME echo   HF file      %HF_FILE_NAME%
-if defined HF_FILE_SIZE echo   File size    %HF_FILE_SIZE% GB
-echo   Context      %CONTEXT_SIZE% tokens
-echo   GPU layers   %GPU_LAYERS%
-echo   Slots        %PARALLEL_SLOTS%
-echo   Draft MTP    %MTP_STATUS%
-echo   Tools        enabled
-echo.
-
-if not exist "%SERVER_DIR%\" (
-  echo  [ERROR] Server directory was not found:
-  echo          %SERVER_DIR%
+if "%PS_EXIT%"=="90" (
+  if exist "%LAUNCHER_RUN_FILE%" (
+    call "%LAUNCHER_RUN_FILE%"
+    set "APP_EXIT=%ERRORLEVEL%"
+    del "%LAUNCHER_RUN_FILE%" >nul 2>nul
+    exit /b %APP_EXIT%
+  )
   echo.
-  pause
+  echo [ERROR] Launcher handoff file was not created:
+  echo         %LAUNCHER_RUN_FILE%
   exit /b 1
 )
 
-cd /d "%SERVER_DIR%"
+if exist "%LAUNCHER_RUN_FILE%" del "%LAUNCHER_RUN_FILE%" >nul 2>nul
+exit /b %PS_EXIT%
 
-if not exist "%SERVER_EXE%" (
-  echo  [ERROR] %SERVER_EXE% was not found in:
-  echo          %SERVER_DIR%
-  echo.
-  pause
-  exit /b 1
+:__POWERSHELL_PAYLOAD__
+param(
+  [Parameter(Mandatory = $true)]
+  [string] $BatchPath,
+
+  [Parameter(Mandatory = $true)]
+  [string] $ScriptDir
 )
 
-echo  [READY] Starting llama.cpp server...
-if defined EXTRA_ARGS (
-  echo  [DEBUG] Extra args: !EXTRA_ARGS!
-) else (
-  echo  [DEBUG] Extra args: ^<none^>
-)
-echo  ------------------------------------------------------------
-echo.
+$ErrorActionPreference = 'Stop'
 
-%SERVER_EXE% ^
-  --tools all ^
-  --host %HOST% ^
-  --port %PORT% ^
-  %MODEL_FLAG% "%MODEL_SOURCE%" %HF_FILE% ^
-  -c %CONTEXT_SIZE% ^
-  -fa on ^
-  -ngl %GPU_LAYERS% ^
-  -np %PARALLEL_SLOTS% %EXTRA_ARGS%
+$script:AppName = 'llamacpp-launcher'
+$script:NodeRequirement = '20.19+, 22.13+, or 24+'
+$script:BatchPath = [IO.Path]::GetFullPath($BatchPath)
+$script:ScriptDir = [IO.Path]::GetFullPath($ScriptDir)
+if (-not $script:ScriptDir.EndsWith([IO.Path]::DirectorySeparatorChar)) {
+  $script:ScriptDir = $script:ScriptDir + [IO.Path]::DirectorySeparatorChar
+}
 
-echo.
-echo  ------------------------------------------------------------
-echo  [STOPPED] llama.cpp Server has stopped.
-echo  Press any key to close this window.
-echo  ------------------------------------------------------------
-pause >nul
-exit /b
+$script:LogFile = Join-Path $script:ScriptDir 'llamacpp-launcher.log'
+$script:FailureCode = 1
+$script:InstallRoot = $null
+$script:NpmPrefix = $null
+$script:NpmCache = $null
+$script:AppDir = $null
+$script:AppEntry = $null
+$script:AppPackageJson = $null
+$script:AppVersionMarker = $null
+$script:NodeExe = $null
+$script:NpmCmd = $null
+$script:NodeVersion = $null
+$script:GitExe = $null
+$script:GitVersion = $null
+$script:RunFile = $env:LAUNCHER_RUN_FILE
+$script:LaunchDelegated = $false
+$script:DelegatedLaunchExitCode = 90
 
-:select_model
-cls
-echo.
-echo  ============================================================
-echo   LLAMA.CPP MODEL SELECTOR
-echo  ============================================================
-echo.
-echo   Hugging Face cache:
-echo   %HF_CACHE%
-echo.
-echo  ------------------------------------------------------------
-echo   Downloaded GGUF models
-echo  ------------------------------------------------------------
+try {
+  $Host.UI.RawUI.WindowTitle = 'llamacpp-launcher'
+} catch {
+}
 
-set "MODEL_COUNT=0"
+function Get-Timestamp {
+  return (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+}
 
-if exist "%HF_CACHE%\" (
-  for /f "delims=" %%F in ('where.exe /r "%HF_CACHE%" *.gguf 2^>nul') do (
-    set "MODEL_PATH=%%~fF"
-    set "MODEL_FILE_NAME=%%~nxF"
-    if /i not "!MODEL_FILE_NAME:~0,6!"=="mmproj" (
-      set "REL_PATH=!MODEL_PATH:%HF_CACHE%\=!"
-      for /f "tokens=1 delims=\" %%R in ("!REL_PATH!") do (
-        set "REPO_ID=%%R"
-        set "REPO_ID=!REPO_ID:models--=!"
-        set "REPO_ID=!REPO_ID:--=/!"
-        set /a MODEL_COUNT+=1
-        set "MODEL_FILE_!MODEL_COUNT!=!MODEL_PATH!"
-        set "MODEL_REPO_!MODEL_COUNT!=!REPO_ID!"
-        set "MODEL_NAME_!MODEL_COUNT!=!MODEL_FILE_NAME!"
-        echo   [!MODEL_COUNT!] !REPO_ID! / !MODEL_FILE_NAME!
-      )
+function Start-Log {
+  try {
+    Set-Content -LiteralPath $script:LogFile -Encoding UTF8 -Value ("[{0}] {1} started" -f (Get-Timestamp), $script:AppName)
+  } catch {
+    $script:LogFile = Join-Path ([IO.Path]::GetTempPath()) 'llamacpp-launcher.log'
+    Set-Content -LiteralPath $script:LogFile -Encoding UTF8 -Value ("[{0}] {1} started" -f (Get-Timestamp), $script:AppName)
+  }
+
+  Write-Log ("Batch path: {0}" -f $script:BatchPath)
+  Write-Log ("Script directory: {0}" -f $script:ScriptDir)
+}
+
+function Write-Log {
+  param([string] $Message)
+
+  try {
+    Add-Content -LiteralPath $script:LogFile -Encoding UTF8 -Value ("[{0}] {1}" -f (Get-Timestamp), $Message)
+  } catch {
+  }
+}
+
+function Write-Ui {
+  param(
+    [string] $Text = '',
+    [ConsoleColor] $Color = [ConsoleColor]::Gray
+  )
+
+  if ([Console]::IsOutputRedirected) {
+    Write-Output $Text
+  } else {
+    Write-Host $Text -ForegroundColor $Color
+  }
+}
+
+function Write-Header {
+  try {
+    if (-not [Console]::IsOutputRedirected) {
+      Clear-Host
+    }
+  } catch {
+  }
+
+  Write-Ui ''
+  Write-Ui '============================================================' Cyan
+  Write-Ui ' LLAMACPP-LAUNCHER' White
+  Write-Ui ' Production bootstrapper for the llama.cpp launcher' DarkGray
+  Write-Ui '============================================================' Cyan
+  Write-Ui ''
+  Write-KeyValue 'Script' $script:BatchPath
+  Write-KeyValue 'Install root' $script:InstallRoot
+  Write-KeyValue 'Log file' $script:LogFile
+  Write-Ui ''
+}
+
+function Write-Section {
+  param([string] $Title)
+
+  Write-Ui ''
+  Write-Ui ("-- {0} {1}" -f $Title, ('-' * [Math]::Max(1, 57 - $Title.Length))) Cyan
+}
+
+function Write-KeyValue {
+  param(
+    [string] $Key,
+    [string] $Value
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Value)) {
+    $Value = 'n/a'
+  }
+
+  Write-Ui ("  {0,-14} {1}" -f $Key, $Value) DarkGray
+}
+
+function Write-Status {
+  param(
+    [ValidateSet('OK', 'WARN', 'ERROR', 'INFO', 'STEP')]
+    [string] $State,
+    [string] $Message,
+    [string] $Detail = ''
+  )
+
+  $label = '[INFO]'
+  $color = [ConsoleColor]::Gray
+
+  switch ($State) {
+    'OK' {
+      $label = '[OK]'
+      $color = [ConsoleColor]::Green
+    }
+    'WARN' {
+      $label = '[WARN]'
+      $color = [ConsoleColor]::Yellow
+    }
+    'ERROR' {
+      $label = '[ERROR]'
+      $color = [ConsoleColor]::Red
+    }
+    'STEP' {
+      $label = '[RUN]'
+      $color = [ConsoleColor]::Cyan
+    }
+  }
+
+  if ([Console]::IsOutputRedirected) {
+    Write-Output ("  {0,-7} {1}" -f $label, $Message)
+  } else {
+    Write-Host ("  {0,-7} " -f $label) -ForegroundColor $color -NoNewline
+    Write-Host $Message -ForegroundColor Gray
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($Detail)) {
+    Write-Ui ("          {0}" -f $Detail) DarkGray
+  }
+}
+
+function Stop-Launcher {
+  param(
+    [string] $Message,
+    [int] $Code = 1
+  )
+
+  $script:FailureCode = $Code
+  throw $Message
+}
+
+function Pause-IfInteractive {
+  if ($script:LaunchDelegated) {
+    return
+  }
+
+  if ($env:LAUNCHER_SELF_TEST -eq '1') {
+    return
+  }
+
+  try {
+    if (-not [Console]::IsInputRedirected) {
+      Write-Ui ''
+      Write-Ui 'Press any key to close this window...' DarkGray
+      [void] [Console]::ReadKey($true)
+    }
+  } catch {
+  }
+}
+
+function ConvertTo-BatchLiteral {
+  param([string] $Value)
+
+  if ($null -eq $Value) {
+    return ''
+  }
+
+  return ([string] $Value).Replace('^', '^^').Replace('%', '%%')
+}
+
+function Initialize-Paths {
+  $fallbackRoot = Join-Path $script:ScriptDir '.llamacpp-launcher-data'
+  if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    $root = $fallbackRoot
+  } else {
+    $root = Join-Path $env:LOCALAPPDATA $script:AppName
+  }
+
+  try {
+    New-Item -ItemType Directory -Force -Path $root | Out-Null
+  } catch {
+  }
+
+  if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+    $root = $fallbackRoot
+    New-Item -ItemType Directory -Force -Path $root | Out-Null
+  }
+
+  $script:InstallRoot = [IO.Path]::GetFullPath($root)
+  $script:NpmPrefix = Join-Path $script:InstallRoot 'npm-prefix'
+  $script:NpmCache = Join-Path $script:InstallRoot 'npm-cache'
+  $script:AppDir = Join-Path (Join-Path $script:NpmPrefix 'node_modules') $script:AppName
+  $script:AppEntry = Join-Path (Join-Path $script:AppDir 'dist') 'index.js'
+  $script:AppPackageJson = Join-Path $script:AppDir 'package.json'
+  $script:AppVersionMarker = Join-Path $script:InstallRoot 'installed-version.txt'
+  $env:LLAMACPP_LAUNCHER_HOME = $script:InstallRoot
+}
+
+function Test-SupportedNodeVersion {
+  param([string] $Version)
+
+  if ($Version -notmatch '^v?(\d+)\.(\d+)\.(\d+)') {
+    return $false
+  }
+
+  $major = [int] $Matches[1]
+  $minor = [int] $Matches[2]
+
+  return (($major -eq 20 -and $minor -ge 19) -or ($major -eq 22 -and $minor -ge 13) -or ($major -ge 24))
+}
+
+function Add-UniquePath {
+  param(
+    [hashtable] $Seen,
+    [string] $Path
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    return
+  }
+
+  try {
+    $full = (Resolve-Path -LiteralPath $Path).Path
+    $key = $full.ToLowerInvariant()
+    if (-not $Seen.ContainsKey($key)) {
+      $Seen[$key] = $full
+    }
+  } catch {
+  }
+}
+
+function Get-NodeCandidates {
+  $seen = @{}
+
+  try {
+    Get-Command node.exe -All -ErrorAction SilentlyContinue | ForEach-Object {
+      Add-UniquePath -Seen $seen -Path $_.Source
+    }
+  } catch {
+  }
+
+  $candidateFiles = @()
+  if ($env:ProgramFiles) {
+    $candidateFiles += Join-Path $env:ProgramFiles 'nodejs\node.exe'
+    $candidateFiles += Join-Path $env:ProgramFiles 'Nodist\bin\node.exe'
+  }
+  if (${env:ProgramFiles(x86)}) {
+    $candidateFiles += Join-Path ${env:ProgramFiles(x86)} 'nodejs\node.exe'
+    $candidateFiles += Join-Path ${env:ProgramFiles(x86)} 'Nodist\bin\node.exe'
+  }
+  if ($env:LOCALAPPDATA) {
+    $candidateFiles += Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe'
+    $candidateFiles += Join-Path $env:LOCALAPPDATA 'Volta\bin\node.exe'
+  }
+  if ($env:NVM_SYMLINK) {
+    $candidateFiles += Join-Path $env:NVM_SYMLINK 'node.exe'
+  }
+
+  foreach ($path in $candidateFiles) {
+    Add-UniquePath -Seen $seen -Path $path
+  }
+
+  $versionRoots = @()
+  if ($env:NVM_HOME) {
+    $versionRoots += $env:NVM_HOME
+  }
+  if ($env:APPDATA) {
+    $versionRoots += Join-Path $env:APPDATA 'nvm'
+  }
+  if ($env:LOCALAPPDATA) {
+    $versionRoots += Join-Path $env:LOCALAPPDATA 'nvm'
+  }
+
+  foreach ($root in $versionRoots) {
+    if (Test-Path -LiteralPath $root -PathType Container) {
+      Get-ChildItem -LiteralPath $root -Directory -Filter 'v*' -ErrorAction SilentlyContinue | ForEach-Object {
+        Add-UniquePath -Seen $seen -Path (Join-Path $_.FullName 'node.exe')
+      }
+    }
+  }
+
+  $fnmRoots = @()
+  if ($env:LOCALAPPDATA) {
+    $fnmRoots += Join-Path $env:LOCALAPPDATA 'fnm\node-versions'
+  }
+  if ($env:APPDATA) {
+    $fnmRoots += Join-Path $env:APPDATA 'fnm\node-versions'
+  }
+
+  foreach ($root in $fnmRoots) {
+    if (Test-Path -LiteralPath $root -PathType Container) {
+      Get-ChildItem -LiteralPath $root -Recurse -File -Filter node.exe -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '\\installation\\node\.exe$' } |
+        ForEach-Object { Add-UniquePath -Seen $seen -Path $_.FullName }
+    }
+  }
+
+  $rows = @()
+  foreach ($node in $seen.Values) {
+    $dir = Split-Path -Parent $node
+    $npm = Join-Path $dir 'npm.cmd'
+    $version = 'unknown'
+    $major = 0
+    $minor = 0
+    $patch = 0
+
+    try {
+      $raw = & $node --version 2>$null | Select-Object -First 1
+      if ($raw) {
+        $version = ([string] $raw).Trim()
+      }
+    } catch {
+    }
+
+    if ($version -match '^v?(\d+)\.(\d+)\.(\d+)') {
+      $major = [int] $Matches[1]
+      $minor = [int] $Matches[2]
+      $patch = [int] $Matches[3]
+    } elseif ($version -match '^v?(\d+)') {
+      $major = [int] $Matches[1]
+    }
+
+    $status = 'unsupported'
+    if (-not (Test-Path -LiteralPath $npm -PathType Leaf)) {
+      $status = 'missing-npm'
+    } elseif (Test-SupportedNodeVersion -Version $version) {
+      $status = 'supported'
+    }
+
+    $rank = 50
+    if ($node -match '\\nvm\\v\d+\.\d+\.\d+\\node\.exe$') {
+      $rank = 0
+    } elseif ($node -match '\\nodejs\\node\.exe$') {
+      $rank = 10
+    } elseif ($node -match '\\Volta\\bin\\node\.exe$') {
+      $rank = 20
+    } elseif ($node -match '\\fnm\\node-versions\\') {
+      $rank = 30
+    }
+
+    $rows += [pscustomobject] @{
+      Status = $status
+      Major = $major
+      Minor = $minor
+      Patch = $patch
+      Version = $version
+      Node = $node
+      Npm = $npm
+      Rank = $rank
+    }
+  }
+
+  return @($rows | Sort-Object `
+    @{ Expression = { if ($_.Status -eq 'supported') { 0 } else { 1 } } }, `
+    Rank, `
+    @{ Expression = 'Major'; Descending = $true }, `
+    @{ Expression = 'Minor'; Descending = $true }, `
+    @{ Expression = 'Patch'; Descending = $true }, `
+    Node)
+}
+
+function Show-Menu {
+  param(
+    [string] $Title,
+    [array] $Items,
+    [int] $DefaultIndex = 0
+  )
+
+  if ($Items.Count -eq 0) {
+    return $null
+  }
+
+  if ($DefaultIndex -lt 0 -or $DefaultIndex -ge $Items.Count) {
+    $DefaultIndex = 0
+  }
+
+  if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
+    try {
+      return Invoke-InteractiveMenu -Title $Title -Items $Items -DefaultIndex $DefaultIndex
+    } catch {
+      Write-Log ("Interactive menu failed: {0}" -f $_.Exception.Message)
+      Write-Status WARN 'Interactive menu is unavailable.' 'Falling back to numbered input.'
+    }
+  }
+
+  return Invoke-NumberedMenu -Title $Title -Items $Items -DefaultIndex $DefaultIndex
+}
+
+function Invoke-InteractiveMenu {
+  param(
+    [string] $Title,
+    [array] $Items,
+    [int] $DefaultIndex
+  )
+
+  $selected = $DefaultIndex
+  $top = [Console]::CursorTop
+  $height = $Items.Count + 4
+  [Console]::CursorVisible = $false
+
+  try {
+    while ($true) {
+      $width = [Math]::Max(40, [Console]::WindowWidth - 1)
+      for ($row = 0; $row -lt $height; $row++) {
+        [Console]::SetCursorPosition(0, $top + $row)
+        [Console]::Write((' ' * $width))
+      }
+
+      [Console]::SetCursorPosition(0, $top)
+      Write-Ui ''
+      Write-Ui ("  {0}" -f $Title) Cyan
+      Write-Ui '  Up/Down: move  Enter: select  Esc: cancel' DarkGray
+
+      for ($i = 0; $i -lt $Items.Count; $i++) {
+        $label = [string] $Items[$i].Label
+        $maxLabel = [Math]::Max(16, $width - 6)
+        if ($label.Length -gt $maxLabel) {
+          $label = $label.Substring(0, $maxLabel - 3) + '...'
+        }
+
+        $line = ("  {0} {1}" -f $(if ($i -eq $selected) { '>' } else { ' ' }), $label).PadRight($width)
+        if ($i -eq $selected) {
+          Write-Host $line -ForegroundColor Black -BackgroundColor Cyan
+        } else {
+          Write-Host $line -ForegroundColor Gray
+        }
+      }
+
+      $key = [Console]::ReadKey($true)
+      switch ($key.Key) {
+        'UpArrow' {
+          $selected--
+          if ($selected -lt 0) {
+            $selected = $Items.Count - 1
+          }
+        }
+        'DownArrow' {
+          $selected++
+          if ($selected -ge $Items.Count) {
+            $selected = 0
+          }
+        }
+        'Enter' {
+          Write-Ui ''
+          return $Items[$selected].Value
+        }
+        'Escape' {
+          Write-Ui ''
+          return $null
+        }
+      }
+    }
+  } finally {
+    try {
+      [Console]::CursorVisible = $true
+    } catch {
+    }
+  }
+}
+
+function Invoke-NumberedMenu {
+  param(
+    [string] $Title,
+    [array] $Items,
+    [int] $DefaultIndex
+  )
+
+  Write-Ui ''
+  Write-Ui ("  {0}" -f $Title) Cyan
+  for ($i = 0; $i -lt $Items.Count; $i++) {
+    $suffix = ''
+    if ($i -eq $DefaultIndex) {
+      $suffix = ' (recommended)'
+    }
+    Write-Ui ("  [{0}] {1}{2}" -f ($i + 1), $Items[$i].Label, $suffix) Gray
+  }
+
+  if ([Console]::IsInputRedirected) {
+    Write-Status WARN 'Input is redirected.' ("Using default: {0}" -f $Items[$DefaultIndex].Label)
+    return $Items[$DefaultIndex].Value
+  }
+
+  while ($true) {
+    $answer = Read-Host ("Select number [{0}]" -f ($DefaultIndex + 1))
+    if ([string]::IsNullOrWhiteSpace($answer)) {
+      return $Items[$DefaultIndex].Value
+    }
+
+    $number = 0
+    if ([int]::TryParse($answer, [ref] $number) -and $number -ge 1 -and $number -le $Items.Count) {
+      return $Items[$number - 1].Value
+    }
+
+    Write-Status ERROR 'Invalid selection.' 'Enter one of the listed numbers.'
+  }
+}
+
+function Ensure-Node {
+  Write-Section 'Node.js'
+  Write-Status STEP 'Scanning installed Node.js runtimes.'
+  Write-Log 'Scanning installed Node.js runtimes'
+
+  $candidates = Get-NodeCandidates
+  Show-NodeCandidates -Candidates $candidates
+
+  $supported = @($candidates | Where-Object { $_.Status -eq 'supported' })
+  if ($supported.Count -eq 0) {
+    if ($candidates.Count -eq 0) {
+      Write-Status WARN 'Node.js was not found.' ("Required: {0}" -f $script:NodeRequirement)
+      Write-Log 'Node.js was not found'
+    } else {
+      Write-Status WARN 'No supported Node.js runtime was found.' ("Required: {0}" -f $script:NodeRequirement)
+      Write-Log 'No supported Node.js runtime was found'
+    }
+
+    Install-WingetPackage -Id 'OpenJS.NodeJS.LTS' -Name 'Node.js LTS'
+    $candidates = Get-NodeCandidates
+    Show-NodeCandidates -Candidates $candidates
+    $supported = @($candidates | Where-Object { $_.Status -eq 'supported' })
+  }
+
+  if ($supported.Count -eq 0) {
+    Stop-Launcher 'Node.js installation finished, but a supported node.exe with npm.cmd was not found. Open a new command prompt and run this launcher again.'
+  }
+
+  if ($supported.Count -eq 1) {
+    $selected = $supported[0]
+  } else {
+    $items = @()
+    foreach ($node in $supported) {
+      $items += [pscustomobject] @{
+        Label = ("{0}  {1}" -f $node.Version, $node.Node)
+        Value = $node
+      }
+    }
+    $selected = Show-Menu -Title 'Select Node.js runtime' -Items $items -DefaultIndex 0
+    if ($null -eq $selected) {
+      Stop-Launcher 'Node.js selection was cancelled.'
+    }
+  }
+
+  $script:NodeExe = $selected.Node
+  $script:NpmCmd = $selected.Npm
+  $script:NodeVersion = $selected.Version
+  Write-Status OK ("Node.js selected: {0}" -f $script:NodeVersion) $script:NodeExe
+  Write-Log ("Selected Node.js: {0} ({1})" -f $script:NodeVersion, $script:NodeExe)
+}
+
+function Show-NodeCandidates {
+  param([array] $Candidates)
+
+  if ($Candidates.Count -eq 0) {
+    Write-Status WARN 'No Node.js candidates were detected.'
+    return
+  }
+
+  foreach ($candidate in $Candidates) {
+    if ($candidate.Status -eq 'supported') {
+      Write-Status OK ("{0}  {1}" -f $candidate.Version, $candidate.Node)
+    } elseif ($candidate.Status -eq 'missing-npm') {
+      Write-Status WARN ("{0}  {1}" -f $candidate.Version, $candidate.Node) 'npm.cmd was not found next to node.exe.'
+    } else {
+      Write-Status WARN ("{0}  {1}" -f $candidate.Version, $candidate.Node) ("Requires Node.js {0}." -f $script:NodeRequirement)
+    }
+  }
+}
+
+function Ensure-Git {
+  Write-Section 'Git'
+  Write-Status STEP 'Checking Git for Windows.'
+  Write-Log 'Checking Git'
+
+  $git = Find-Git
+  if ($null -eq $git) {
+    Write-Status WARN 'Git was not found.'
+    Write-Log 'Git was not found'
+    Install-WingetPackage -Id 'Git.Git' -Name 'Git'
+    $git = Find-Git
+  }
+
+  if ($null -eq $git) {
+    Stop-Launcher 'Git installation finished, but git.exe was not found. Open a new command prompt and run this launcher again.'
+  }
+
+  $script:GitExe = $git.Path
+  $script:GitVersion = $git.Version
+  $gitBin = Split-Path -Parent $script:GitExe
+  $env:PATH = "$gitBin;$env:PATH"
+  Write-Status OK ("Git ready: {0}" -f $script:GitVersion) $script:GitExe
+  Write-Log ("Git ready: {0} ({1})" -f $script:GitVersion, $script:GitExe)
+}
+
+function Find-Git {
+  $seen = @{}
+  $common = @()
+  if ($env:ProgramFiles) {
+    $common += Join-Path $env:ProgramFiles 'Git\cmd\git.exe'
+  }
+  if (${env:ProgramFiles(x86)}) {
+    $common += Join-Path ${env:ProgramFiles(x86)} 'Git\cmd\git.exe'
+  }
+  if ($env:LOCALAPPDATA) {
+    $common += Join-Path $env:LOCALAPPDATA 'Programs\Git\cmd\git.exe'
+  }
+
+  foreach ($path in $common) {
+    Add-UniquePath -Seen $seen -Path $path
+  }
+
+  try {
+    Get-Command git.exe -ErrorAction SilentlyContinue | Select-Object -First 1 | ForEach-Object {
+      Add-UniquePath -Seen $seen -Path $_.Source
+    }
+  } catch {
+  }
+
+  foreach ($path in $seen.Values) {
+    $version = 'version check failed'
+    try {
+      $raw = & $path --version 2>$null | Select-Object -First 1
+      if ($raw) {
+        $version = ([string] $raw).Trim()
+      }
+    } catch {
+    }
+
+    return [pscustomobject] @{
+      Path = $path
+      Version = $version
+    }
+  }
+
+  return $null
+}
+
+function Find-CommandPath {
+  param([string] $Name)
+
+  try {
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) {
+      return $cmd.Source
+    }
+  } catch {
+  }
+
+  return $null
+}
+
+function Install-WingetPackage {
+  param(
+    [string] $Id,
+    [string] $Name
+  )
+
+  $winget = Find-CommandPath -Name 'winget.exe'
+  if ($winget) {
+    Write-Status STEP ("Installing {0} with winget." -f $Name) 'Windows may show an installer or UAC prompt.'
+    Write-Log ("Installing {0} with winget id {1}" -f $Name, $Id)
+
+    $code = Invoke-LoggedProcess -FilePath $winget -Arguments @(
+      'install',
+      '--id', $Id,
+      '-e',
+      '--source', 'winget',
+      '--accept-source-agreements',
+      '--accept-package-agreements'
     )
-  )
-)
 
-if "%MODEL_COUNT%"=="0" (
-  echo   No local GGUF models were found.
-)
+    if ($code -eq 0) {
+      Refresh-Path
+      return
+    }
 
-set /a HF_OPTION=MODEL_COUNT+1
+    Write-Status WARN ("winget failed to install {0}." -f $Name) 'Trying the official installer fallback.'
+    Write-Log ("winget install failed for {0} with exit code {1}" -f $Name, $code)
+  } else {
+    Write-Status WARN 'winget was not found.' ("Using the official {0} installer fallback." -f $Name)
+    Write-Log ("winget was not found for {0}" -f $Name)
+  }
 
-echo.
-echo  ------------------------------------------------------------
-echo   Options
-echo  ------------------------------------------------------------
-echo   0           Quit
-if "%MODEL_COUNT%"=="1" (
-  echo   1           Use the downloaded local GGUF model
-) else (
-  if not "%MODEL_COUNT%"=="0" echo   1-%MODEL_COUNT%   Use a downloaded local GGUF model
-)
-echo   !HF_OPTION!           Enter a Hugging Face repo or URL
-echo.
+  Install-DirectPackage -Id $Id -Name $Name
+  Refresh-Path
+}
 
-:select_model_prompt
-set "MODEL_CHOICE="
-ver >nul
-set /p "MODEL_CHOICE=Select number: "
-if errorlevel 1 (
-  echo   [ERROR] Input stream was closed.
-  exit /b 1
-)
-
-if "%MODEL_CHOICE%"=="" (
-  echo   [ERROR] Enter a number.
-  echo.
-  goto :select_model_prompt
-)
-
-if "%MODEL_CHOICE%"=="0" (
-  echo.
-  echo   Startup cancelled.
-  echo   Press any key to close this window.
-  pause >nul
-  exit /b 1
-)
-
-set "INVALID_CHOICE="
-for /f "delims=0123456789" %%A in ("%MODEL_CHOICE%") do set "INVALID_CHOICE=1"
-
-if defined INVALID_CHOICE (
-  echo   [ERROR] Invalid number.
-  echo.
-  goto :select_model_prompt
-)
-
-set "SELECTED_MODEL="
-set /a SELECTED_MODEL=%MODEL_CHOICE% 2>nul
-if not defined SELECTED_MODEL (
-  echo   [ERROR] Invalid model number.
-  echo.
-  goto :select_model_prompt
-)
-if !SELECTED_MODEL! LSS 1 (
-  echo   [ERROR] Invalid model number.
-  echo.
-  goto :select_model_prompt
-)
-if !SELECTED_MODEL! GTR !HF_OPTION! (
-  echo   [ERROR] Invalid model number.
-  echo.
-  goto :select_model_prompt
-)
-
-if !SELECTED_MODEL! EQU !HF_OPTION! (
-  echo.
-  set "CUSTOM_REF="
-  ver >nul
-  set /p "CUSTOM_REF=Hugging Face repo (user/repo[:quant]) or URL: "
-  if errorlevel 1 (
-    echo   [ERROR] Input stream was closed.
-    exit /b 1
+function Install-DirectPackage {
+  param(
+    [string] $Id,
+    [string] $Name
   )
 
-  if "!CUSTOM_REF!"=="" (
-    echo   [ERROR] Empty input.
-    echo.
-    goto :select_model_prompt
-  )
+  if ($Id -eq 'OpenJS.NodeJS.LTS') {
+    Install-NodeDirect
+    return
+  }
 
-  call :normalize_hf_ref
-  if errorlevel 1 (
-    echo.
-    goto :select_model_prompt
-  )
+  if ($Id -eq 'Git.Git') {
+    Install-GitDirect
+    return
+  }
 
-  call :select_context
-  if errorlevel 1 (
-    echo.
-    goto :select_model
-  )
+  Stop-Launcher ("No direct installer fallback is available for {0}." -f $Name)
+}
 
-  rem  If user did not specify :quant, ask them to pick a file from the repo.
-  set "_HAS_QUANT="
-  for /f "tokens=2 delims=:" %%Q in ("!CUSTOM_REF!") do set "_HAS_QUANT=1"
-  if not defined _HAS_QUANT (
-    call :pick_quant
-    if errorlevel 1 (
-      echo.
-      goto :select_model_prompt
+function Install-NodeDirect {
+  $nodeMsi = Join-Path ([IO.Path]::GetTempPath()) ("llamacpp-node-lts-{0}.msi" -f $PID)
+
+  try {
+    if (Test-Path -LiteralPath $nodeMsi) {
+      Remove-Item -LiteralPath $nodeMsi -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Status STEP 'Downloading Node.js LTS MSI from nodejs.org.'
+    Write-Log 'Downloading Node.js LTS MSI from nodejs.org'
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $data = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -TimeoutSec 20
+    $versionInfo = $data | Where-Object { $_.lts -ne $false -and $_.files -contains 'win-x64-msi' } | Select-Object -First 1
+    if (-not $versionInfo) {
+      Stop-Launcher 'No Node.js LTS MSI was found on nodejs.org.'
+    }
+
+    $installVersion = ([string] $versionInfo.version).TrimStart('v')
+    $url = "https://nodejs.org/dist/$($versionInfo.version)/node-v$installVersion-x64.msi"
+    Invoke-WebRequest -Uri $url -OutFile $nodeMsi -UseBasicParsing
+
+    if (-not (Test-Path -LiteralPath $nodeMsi -PathType Leaf)) {
+      Stop-Launcher ("Node.js MSI was not downloaded: {0}" -f $nodeMsi)
+    }
+
+    Write-Status STEP ("Installing Node.js {0}." -f $installVersion) 'Windows may show an installer or UAC prompt.'
+    Write-Log ("Installing Node.js MSI: {0}" -f $nodeMsi)
+    $code = Invoke-LoggedProcess -FilePath 'msiexec.exe' -Arguments @('/i', $nodeMsi, '/passive', '/norestart')
+    if ($code -ne 0 -and $code -ne 3010) {
+      Stop-Launcher ("Node.js MSI installation failed with exit code {0}." -f $code)
+    }
+  } catch {
+    Write-Log ("Node.js direct installer failed: {0}" -f $_.Exception.Message)
+    throw
+  } finally {
+    Remove-Item -LiteralPath $nodeMsi -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Install-GitDirect {
+  $gitInstaller = Join-Path ([IO.Path]::GetTempPath()) ("llamacpp-git-{0}.exe" -f $PID)
+
+  try {
+    if (Test-Path -LiteralPath $gitInstaller) {
+      Remove-Item -LiteralPath $gitInstaller -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Status STEP 'Downloading Git for Windows from GitHub releases.'
+    Write-Log 'Downloading Git for Windows installer from GitHub releases'
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest' -TimeoutSec 20 -Headers @{ 'User-Agent' = $script:AppName }
+    $asset = $release.assets | Where-Object { $_.name -match '^Git-\d+(\.\d+)+-64-bit\.exe$' } | Select-Object -First 1
+    if (-not $asset) {
+      Stop-Launcher 'Git for Windows 64-bit installer asset was not found.'
+    }
+
+    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $gitInstaller -UseBasicParsing
+    if (-not (Test-Path -LiteralPath $gitInstaller -PathType Leaf)) {
+      Stop-Launcher ("Git installer was not downloaded: {0}" -f $gitInstaller)
+    }
+
+    Write-Status STEP ("Installing {0}." -f $asset.name) 'Windows may show an installer or UAC prompt.'
+    Write-Log ("Installing Git for Windows: {0}" -f $gitInstaller)
+    $code = Invoke-LoggedProcess -FilePath $gitInstaller -Arguments @(
+      '/VERYSILENT',
+      '/NORESTART',
+      '/NOCANCEL',
+      '/SP-',
+      '/CLOSEAPPLICATIONS',
+      '/RESTARTAPPLICATIONS',
+      '/o:PathOption=Cmd'
     )
+
+    if ($code -ne 0) {
+      Stop-Launcher ("Git installer failed with exit code {0}." -f $code)
+    }
+  } catch {
+    Write-Log ("Git direct installer failed: {0}" -f $_.Exception.Message)
+    throw
+  } finally {
+    Remove-Item -LiteralPath $gitInstaller -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Invoke-LoggedProcess {
+  param(
+    [string] $FilePath,
+    [string[]] $Arguments
   )
 
-  set "MODEL_MODE=hf"
-  set "MODEL_FLAG=-hf"
-  set "MODEL_SOURCE=!CUSTOM_REF!"
-  >> "%LOG_FILE%" echo [%DATE% %TIME%] Selected HF model: !CUSTOM_REF! file=!HF_FILE_NAME!
-  exit /b 0
-)
+  Write-Log ("Running: {0} {1}" -f $FilePath, ($Arguments -join ' '))
+  & $FilePath @Arguments *>> $script:LogFile
+  if ($null -eq $global:LASTEXITCODE) {
+    return 0
+  }
 
-call :select_context
-if errorlevel 1 (
-  echo.
-  goto :select_model
-)
+  return [int] $global:LASTEXITCODE
+}
 
-for %%N in (!SELECTED_MODEL!) do (
-  set "MODEL_MODE=local"
-  set "MODEL_FLAG=-m"
-  set "MODEL_SOURCE=!MODEL_FILE_%%N!"
-  >> "%LOG_FILE%" echo [%DATE% %TIME%] Selected local model: !MODEL_FILE_%%N!
-)
-exit /b 0
+function Refresh-Path {
+  $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+  $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+  $env:PATH = "$machine;$user;$env:PATH"
+  Write-Log 'PATH refreshed from machine and user environment'
+}
 
-:select_context
-echo.
-echo  ------------------------------------------------------------
-echo   Context size
-echo  ------------------------------------------------------------
-echo   1           4096 tokens
-echo   2           20000 tokens
-echo   3           64000 tokens
-echo   4           96000 tokens
-echo   5           128000 tokens
-echo   0           Cancel
-echo.
+function Apply-NodePath {
+  Write-Section 'Environment'
+  if ([string]::IsNullOrWhiteSpace($script:NodeExe)) {
+    Stop-Launcher 'Node.js path was not resolved.'
+  }
 
-:select_context_prompt
-set "CONTEXT_CHOICE="
-set "_CONTEXT_SIZE="
-ver >nul
-set /p "CONTEXT_CHOICE=Select context size: "
-if errorlevel 1 (
-  echo   [ERROR] Input stream was closed.
-  exit /b 1
-)
+  $nodeBin = Split-Path -Parent $script:NodeExe
+  $npmBin = Join-Path $script:NpmPrefix 'node_modules\.bin'
+  $env:PATH = "$nodeBin;$script:NpmPrefix;$npmBin;$env:PATH"
+  $env:npm_config_prefix = $script:NpmPrefix
+  $env:npm_config_cache = $script:NpmCache
+  Write-Status OK 'PATH updated for Node.js and npm.' $nodeBin
+  Write-Log 'PATH updated with Node.js and npm prefix'
+}
 
-if "!CONTEXT_CHOICE!"=="" (
-  echo   [ERROR] Enter a number.
-  echo.
-  goto :select_context_prompt
-)
+function Prepare-NpmDirs {
+  foreach ($dir in @($script:NpmPrefix, $script:NpmCache)) {
+    try {
+      New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    } catch {
+      Stop-Launcher ("Failed to create directory: {0}" -f $dir)
+    }
 
-if "!CONTEXT_CHOICE!"=="0" exit /b 1
-if "!CONTEXT_CHOICE!"=="1" set "_CONTEXT_SIZE=4096"
-if "!CONTEXT_CHOICE!"=="2" set "_CONTEXT_SIZE=20000"
-if "!CONTEXT_CHOICE!"=="3" set "_CONTEXT_SIZE=64000"
-if "!CONTEXT_CHOICE!"=="4" set "_CONTEXT_SIZE=96000"
-if "!CONTEXT_CHOICE!"=="5" set "_CONTEXT_SIZE=128000"
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
+      Stop-Launcher ("Directory was not created: {0}" -f $dir)
+    }
+  }
 
-if "!_CONTEXT_SIZE!"=="" (
-  echo   [ERROR] Invalid number.
-  echo.
-  goto :select_context_prompt
-)
+  Write-Status OK 'npm directories are ready.' $script:NpmPrefix
+  Write-Log 'npm directories are ready'
+}
 
-set "CONTEXT_SIZE=!_CONTEXT_SIZE!"
->> "%LOG_FILE%" echo [%DATE% %TIME%] Selected context: !CONTEXT_SIZE! tokens
-exit /b 0
+function Select-Package {
+  Write-Section 'Package'
+  $regex = '^' + [regex]::Escape($script:AppName) + '-(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?<suffix>[-+][0-9A-Za-z.-]+)?\.tgz$'
+  $packages = Get-ChildItem -LiteralPath $script:ScriptDir -Filter ($script:AppName + '-*.tgz') -File -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Name -match $regex) {
+      $suffix = ''
+      if ($Matches['suffix']) {
+        $suffix = $Matches['suffix']
+      }
 
-:normalize_hf_ref
-rem  Normalize CUSTOM_REF: strip scheme, host, and tail paths (/tree/, /blob/, /resolve/).
-rem  Output: CUSTOM_REF as "user/repo" or "user/repo:quant", or errorlevel 1.
-set "_NORM=!CUSTOM_REF!"
+      [pscustomobject] @{
+        Path = $_.FullName
+        Name = $_.Name
+        Version = ('{0}.{1}.{2}{3}' -f $Matches['major'], $Matches['minor'], $Matches['patch'], $suffix)
+        Major = [int] $Matches['major']
+        Minor = [int] $Matches['minor']
+        Patch = [int] $Matches['patch']
+        Time = $_.LastWriteTimeUtc
+      }
+    }
+  }
 
-if /i "!_NORM:~0,8!"=="https://" set "_NORM=!_NORM:~8!"
-if /i "!_NORM:~0,7!"=="http://"  set "_NORM=!_NORM:~7!"
+  $package = $packages | Sort-Object `
+    @{ Expression = 'Major'; Descending = $true }, `
+    @{ Expression = 'Minor'; Descending = $true }, `
+    @{ Expression = 'Patch'; Descending = $true }, `
+    @{ Expression = 'Time'; Descending = $true } |
+    Select-Object -First 1
 
-if /i "!_NORM:~0,19!"=="www.huggingface.co/" set "_NORM=!_NORM:~19!"
-if /i "!_NORM:~0,15!"=="huggingface.co/"     set "_NORM=!_NORM:~15!"
+  if ($package) {
+    Write-Status OK ("Package found: {0}" -f $package.Name) ("Version {0}" -f $package.Version)
+    Write-Log ("Selected package: {0} (version {1})" -f $package.Path, $package.Version)
+    return $package
+  }
 
-if "!_NORM:~-1!"=="/" set "_NORM=!_NORM:~0,-1!"
+  Write-Status WARN ("No {0}-*.tgz package was found next to the launcher." -f $script:AppName)
+  Write-Log 'No package archive found next to launcher'
+  return $null
+}
 
-set "_USER="
-set "_REPO="
-for /f "tokens=1,2 delims=/" %%A in ("!_NORM!") do (
-  set "_USER=%%A"
-  set "_REPO=%%B"
-)
+function Resolve-InstalledVersion {
+  $version = $null
+  $source = $null
 
-if "!_USER!"=="" (
-  echo   [ERROR] Could not parse user from input.
-  exit /b 1
-)
-if "!_REPO!"=="" (
-  echo   [ERROR] Could not parse repo from input.
-  exit /b 1
-)
+  if (Test-Path -LiteralPath $script:AppPackageJson -PathType Leaf) {
+    try {
+      $pkg = Get-Content -Raw -LiteralPath $script:AppPackageJson | ConvertFrom-Json
+      if ($pkg.version) {
+        $version = [string] $pkg.version
+        $source = 'package.json'
+      }
+    } catch {
+      Write-Log ("Failed to read installed package.json: {0}" -f $_.Exception.Message)
+    }
+  }
 
-set "CUSTOM_REF=!_USER!/!_REPO!"
-exit /b 0
+  if (-not $version -and (Test-Path -LiteralPath $script:AppVersionMarker -PathType Leaf)) {
+    try {
+      $version = (Get-Content -LiteralPath $script:AppVersionMarker -ErrorAction Stop | Select-Object -First 1).Trim()
+      if ($version) {
+        $source = 'version marker'
+      }
+    } catch {
+      Write-Log ("Failed to read version marker: {0}" -f $_.Exception.Message)
+    }
+  }
 
-:pick_quant
-rem  Fetch .gguf file list for CUSTOM_REF (which must be user/repo, no quant).
-rem  Output: HF_FILE_NAME, HF_FILE_SIZE, HF_FILE; or errorlevel 1 on cancel/failure.
-set "HF_FILE_NAME="
-set "HF_FILE_SIZE="
-set "HF_FILE="
-set "FILE_COUNT=0"
+  if ($version) {
+    Write-Status OK ("Installed version: {0}" -f $version) $source
+    Write-Log ("Installed package version: {0} ({1})" -f $version, $source)
+  } else {
+    Write-Status WARN 'Installed version could not be detected.'
+    Write-Log 'Installed package version could not be detected'
+  }
 
-set /a _VRAM_GB_DISP=VRAM_MB/1024
-set /a _RAM_GB_DISP=RAM_MB/1024
+  return [pscustomobject] @{
+    Version = $version
+    Source = $source
+  }
+}
 
-echo.
-echo  ------------------------------------------------------------
-echo   Available .gguf files in !CUSTOM_REF!
-echo   Context: !CONTEXT_SIZE! tokens  ^|  VRAM: !_VRAM_GB_DISP! GB  ^|  RAM: !_RAM_GB_DISP! GB
-echo   Fit = model_size + KV(ctx, layers~size) + ~1.5 GB overhead
-echo  ------------------------------------------------------------
+function Get-VersionParts {
+  param([string] $Version)
 
-set "_PS_FILE=%TEMP%\llama_quant_fetch.ps1"
+  $base = ([string] $Version -split '[+-]', 2)[0]
+  $raw = @($base -split '\.')
+  $parts = @(0, 0, 0)
+  for ($i = 0; $i -lt 3; $i++) {
+    if ($i -lt $raw.Count) {
+      $parsed = 0
+      if ([int]::TryParse($raw[$i], [ref] $parsed)) {
+        $parts[$i] = $parsed
+      }
+    }
+  }
 
-rem  ---- KV cache formula (per HF / llama.cpp community) -------------------
-rem    KV (FP16) = 2 * n_layers * n_kv_heads * head_dim * ctx * 2 bytes
-rem  For modern GQA models (8 kv-heads, 128 head_dim, FP16) this collapses
-rem  to ~4096 * n_layers bytes per token. We don't have GGUF metadata, so
-rem  n_layers is bucketed from file size (7B~32, 13B~40, 30B~48, 70B~80).
-rem  ----------------------------------------------------------------------
+  return $parts
+}
 
-> "!_PS_FILE!" echo param([string]$Repo, [int]$VramMb, [int]$RamMb, [int]$CtxTokens)
->>"!_PS_FILE!" echo $ErrorActionPreference = 'Stop'
->>"!_PS_FILE!" echo [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
->>"!_PS_FILE!" echo $esc = [char]27
->>"!_PS_FILE!" echo try {
->>"!_PS_FILE!" echo   $tree = Invoke-RestMethod -Uri "https://huggingface.co/api/models/$Repo/tree/main?recursive=true"
->>"!_PS_FILE!" echo } catch { exit 1 }
->>"!_PS_FILE!" echo $files = @($tree ^| Where-Object { $_.type -eq 'file' -and $_.path -like '*.gguf' -and $_.path -notlike '*mmproj*' -and $_.path -notlike '*imatrix*' } ^| Sort-Object size)
->>"!_PS_FILE!" echo if ($files.Count -eq 0) { exit 2 }
->>"!_PS_FILE!" echo $nameWidth = ($files ^| ForEach-Object { $_.path.Length } ^| Measure-Object -Maximum).Maximum
->>"!_PS_FILE!" echo if ($nameWidth -gt 50) { $nameWidth = 50 }
->>"!_PS_FILE!" echo if ($nameWidth -lt 30) { $nameWidth = 30 }
->>"!_PS_FILE!" echo $fmt = "  [{0,2}] {1,-$nameWidth}  {2,7:N2} GB  [{3}]"
->>"!_PS_FILE!" echo $vramAvail  = [Math]::Floor($VramMb * 0.95)
->>"!_PS_FILE!" echo $totalAvail = $vramAvail + [Math]::Floor($RamMb * 0.70)
->>"!_PS_FILE!" echo $idx = 0
->>"!_PS_FILE!" echo foreach ($f in $files) {
->>"!_PS_FILE!" echo   $idx++
->>"!_PS_FILE!" echo   $sizeMb = [int]($f.size / 1MB)
->>"!_PS_FILE!" echo   $sizeGb = $f.size / 1GB
->>"!_PS_FILE!" echo   if     ($sizeGb -lt  5) { $layers = 28 } elseif ($sizeGb -lt 10) { $layers = 32 } elseif ($sizeGb -lt 20) { $layers = 40 } elseif ($sizeGb -lt 35) { $layers = 48 } elseif ($sizeGb -lt 60) { $layers = 64 } else { $layers = 80 }
->>"!_PS_FILE!" echo   $kvBytesPerToken = 4096 * $layers
->>"!_PS_FILE!" echo   $kvMb = [Math]::Floor($CtxTokens * $kvBytesPerToken / 1MB)
->>"!_PS_FILE!" echo   $neededMb = $sizeMb + $kvMb + 1500
->>"!_PS_FILE!" echo   if ($VramMb -gt 0 -and $neededMb -le $vramAvail) { $statusText='GPU OK '; $color=92 } elseif ($VramMb -gt 0 -and $neededMb -le $totalAvail) { $statusText='PARTIAL'; $color=93 } elseif ($neededMb -le $totalAvail) { $statusText='RAM OK '; $color=92 } else { $statusText='TOO BIG'; $color=91 }
->>"!_PS_FILE!" echo   $status = ("{0}[{1}m{2}{0}[0m" -f $esc, $color, $statusText)
->>"!_PS_FILE!" echo   $name = $f.path
->>"!_PS_FILE!" echo   if ($name.Length -gt $nameWidth) { $name = $name.Substring(0, $nameWidth - 3) + '...' }
->>"!_PS_FILE!" echo   $line = $fmt -f $idx, $name, $sizeGb, $status
->>"!_PS_FILE!" echo   Write-Output ("{0}^|{1}^|{2:N2}^|{3}" -f $idx, $f.path, $sizeGb, $line)
->>"!_PS_FILE!" echo }
-
-for /f "tokens=1,2,3,* delims=|" %%I in ('powershell -NoProfile -ExecutionPolicy Bypass -File "!_PS_FILE!" -Repo "!CUSTOM_REF!" -VramMb !VRAM_MB! -RamMb !RAM_MB! -CtxTokens !CONTEXT_SIZE! 2^>nul') do (
-  set "QFILE_%%I=%%J"
-  set "QSIZE_%%I=%%K"
-  echo %%L
-  set "FILE_COUNT=%%I"
-)
-
-del "!_PS_FILE!" >nul 2>&1
-
-if "!FILE_COUNT!"=="0" (
-  echo.
-  echo   [ERROR] No .gguf files found, or fetch failed.
-  echo          Check the repo name and your internet connection.
-  exit /b 1
-)
-
-echo.
-:pick_quant_prompt
-set "QUANT_CHOICE="
-ver >nul
-set /p "QUANT_CHOICE=Select file number (0 to cancel): "
-if errorlevel 1 (
-  echo   [ERROR] Input stream was closed.
-  exit /b 1
-)
-
-if "!QUANT_CHOICE!"=="" goto :pick_quant_prompt
-if "!QUANT_CHOICE!"=="0" exit /b 1
-
-set "_INVALID="
-for /f "delims=0123456789" %%A in ("!QUANT_CHOICE!") do set "_INVALID=1"
-if defined _INVALID (
-  echo   [ERROR] Invalid number.
-  goto :pick_quant_prompt
-)
-
-if !QUANT_CHOICE! LSS 1 (
-  echo   [ERROR] Invalid number.
-  goto :pick_quant_prompt
-)
-if !QUANT_CHOICE! GTR !FILE_COUNT! (
-  echo   [ERROR] Invalid number.
-  goto :pick_quant_prompt
-)
-
-for %%N in (!QUANT_CHOICE!) do (
-  set "HF_FILE_NAME=!QFILE_%%N!"
-  set "HF_FILE_SIZE=!QSIZE_%%N!"
-)
-set "HF_FILE=--hf-file !HF_FILE_NAME!"
-exit /b 0
-
-:derive_model_label
-if /i "%MODEL_MODE%"=="local" (
-  for %%F in ("%MODEL_SOURCE%") do set "MODEL_LABEL=%%~nF"
-  exit /b 0
-)
-if defined HF_FILE_NAME (
-  set "MODEL_LABEL=%HF_FILE_NAME:.gguf=%"
-  exit /b 0
-)
-set "MODEL_LABEL=%MODEL_SOURCE%"
-for /f "tokens=2 delims=/" %%M in ("%MODEL_SOURCE%") do set "MODEL_LABEL=%%M"
-for /f "tokens=1 delims=:" %%M in ("%MODEL_LABEL%") do set "MODEL_LABEL=%%M"
-set "MODEL_LABEL=%MODEL_LABEL:-GGUF=%"
-exit /b 0
-
-:detect_mtp
-rem  Auto-detect MTP-capable models by substring scan of MODEL_SOURCE + HF_FILE_NAME.
-rem  Substitution :MTP= in cmd.exe is case-insensitive.
-set "ENABLE_MTP=0"
-set "MTP_STATUS=disabled - model has no MTP layers"
-set "EXTRA_ARGS="
-
-set "_MTP_SRC=!MODEL_SOURCE!!HF_FILE_NAME!"
-set "_MTP_STRIPPED=!_MTP_SRC:MTP=!"
-if not "!_MTP_SRC!"=="!_MTP_STRIPPED!" set "ENABLE_MTP=1"
-
-if "!ENABLE_MTP!"=="1" (
-  set "MTP_STATUS=enabled - !DRAFT_TOKENS! draft tokens"
-  set "EXTRA_ARGS=--spec-type draft-mtp --spec-draft-n-max !DRAFT_TOKENS!"
-  >> "%LOG_FILE%" echo [%DATE% %TIME%] MTP marker found in model source - speculative decoding enabled
-) else (
-  >> "%LOG_FILE%" echo [%DATE% %TIME%] No MTP marker in model source - speculative decoding disabled
-)
-exit /b 0
-
-:detect_network
-rem  0.0.0.0 is a listen address, not a connectable URL. Ask Windows which
-rem  local IPv4 address it would use for outbound traffic and show that.
-set "LAN_IP="
-set "LAN_URL=unavailable"
-for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$u = [Net.Sockets.UdpClient]::new(); try { $u.Connect('8.8.8.8', 80); $u.Client.LocalEndPoint.Address.ToString() } finally { $u.Close() }" 2^>nul`) do (
-  if not defined LAN_IP set "LAN_IP=%%I"
-)
-if defined LAN_IP set "LAN_URL=http://!LAN_IP!:%PORT%"
-exit /b 0
-
-:detect_hardware
-rem  GPU name + total VRAM (MiB) via nvidia-smi.
-rem  Some launch environments do not include nvidia-smi in PATH, so also
-rem  check the common driver install locations before falling back to WMI.
-for /f "delims=" %%S in ('where.exe nvidia-smi.exe 2^>nul') do (
-  if not defined NVIDIA_SMI set "NVIDIA_SMI=%%~fS"
-)
-if not defined NVIDIA_SMI if exist "%SystemRoot%\System32\nvidia-smi.exe" set "NVIDIA_SMI=%SystemRoot%\System32\nvidia-smi.exe"
-if not defined NVIDIA_SMI if exist "%ProgramFiles%\NVIDIA Corporation\NVSMI\nvidia-smi.exe" set "NVIDIA_SMI=%ProgramFiles%\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
-
-if defined NVIDIA_SMI for /f "tokens=1,2 delims=," %%G in ('""!NVIDIA_SMI!" --query-gpu=name,memory.total --format=csv,noheader,nounits" 2^>nul') do (
-  set "_GCAND=%%G"
-  set "_VCAND=%%H"
-  if /i not "!_GCAND:~0,5!"=="ERROR" if not "!_GCAND!"=="" if "!GPU_NAME!"=="Unknown GPU" (
-    set "GPU_NAME=!_GCAND!"
-    for /f "tokens=* delims= " %%V in ("!_VCAND!") do set "VRAM_MB=%%V"
+function Test-IsNewerVersion {
+  param(
+    [string] $Candidate,
+    [string] $Installed
   )
-)
 
-rem  Fallback GPU name from WMI if nvidia-smi missing
-if "%GPU_NAME%"=="Unknown GPU" (
-  for /f "skip=1 tokens=* delims=" %%G in ('wmic path win32_VideoController get name 2^>nul') do (
-    set "_GCAND=%%G"
-    if not "!_GCAND!"=="" if "!GPU_NAME!"=="Unknown GPU" set "GPU_NAME=!_GCAND!"
+  $a = Get-VersionParts -Version $Candidate
+  $b = Get-VersionParts -Version $Installed
+  for ($i = 0; $i -lt 3; $i++) {
+    if ($a[$i] -gt $b[$i]) {
+      return $true
+    }
+    if ($a[$i] -lt $b[$i]) {
+      return $false
+    }
+  }
+
+  return $false
+}
+
+function Get-InstallDecision {
+  param(
+    $Package,
+    $Installed
   )
-)
 
-rem  CPU name
-for /f "tokens=2,*" %%A in ('reg query "HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0" /v ProcessorNameString 2^>nul') do set "CPU_NAME=%%B"
+  if (-not (Test-Path -LiteralPath $script:AppEntry -PathType Leaf)) {
+    return [pscustomobject] @{
+      NeedInstall = $true
+      Reason = 'launcher is not installed'
+    }
+  }
 
-rem  Total system RAM (MiB) via PowerShell
-for /f %%R in ('powershell -NoProfile -Command "[Math]::Floor((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB)" 2^>nul') do set "RAM_MB=%%R"
+  if ($null -eq $Package) {
+    return [pscustomobject] @{
+      NeedInstall = $false
+      Reason = 'installed launcher will be used; no local package was found'
+    }
+  }
 
-if not defined VRAM_MB set "VRAM_MB=0"
-if not defined RAM_MB  set "RAM_MB=0"
-exit /b 0
+  if (-not $Installed.Version) {
+    return [pscustomobject] @{
+      NeedInstall = $true
+      Reason = 'installed version could not be detected'
+    }
+  }
+
+  if ($Package.Version -ieq $Installed.Version) {
+    return [pscustomobject] @{
+      NeedInstall = $false
+      Reason = 'installed version matches the local package'
+    }
+  }
+
+  if (Test-IsNewerVersion -Candidate $Package.Version -Installed $Installed.Version) {
+    return [pscustomobject] @{
+      NeedInstall = $true
+      Reason = ("package {0} is newer than installed {1}" -f $Package.Version, $Installed.Version)
+    }
+  }
+
+  return [pscustomobject] @{
+    NeedInstall = $false
+    Reason = ("package {0} is not newer than installed {1}" -f $Package.Version, $Installed.Version)
+  }
+}
+
+function Preserve-LauncherState {
+  if (-not (Test-Path -LiteralPath $script:AppDir -PathType Container)) {
+    return
+  }
+
+  foreach ($name in @('config.json', 'params-history.json', 'template-overrides.json')) {
+    $source = Join-Path $script:AppDir $name
+    $target = Join-Path $script:InstallRoot $name
+    if ((Test-Path -LiteralPath $source -PathType Leaf) -and -not (Test-Path -LiteralPath $target)) {
+      try {
+        Copy-Item -LiteralPath $source -Destination $target -Force
+        Write-Log ("Preserved {0} to {1}" -f $name, $script:InstallRoot)
+      } catch {
+        Write-Log ("Failed to preserve {0}: {1}" -f $name, $_.Exception.Message)
+      }
+    }
+  }
+}
+
+function Install-Launcher {
+  param($Package)
+
+  if ($null -eq $Package) {
+    Stop-Launcher ("{0} is not installed and no {0}-*.tgz package was found next to the launcher: {1}" -f $script:AppName, $script:ScriptDir)
+  }
+
+  Write-Status STEP ("Installing {0} {1}." -f $script:AppName, $Package.Version)
+  Write-KeyValue 'Package' $Package.Path
+  Write-KeyValue 'npm prefix' $script:NpmPrefix
+  Write-Log 'Installing package with npm'
+
+  Preserve-LauncherState
+
+  $code = Invoke-LoggedProcess -FilePath $script:NpmCmd -Arguments @(
+    'install',
+    '--prefix', $script:NpmPrefix,
+    '--cache', $script:NpmCache,
+    '-g', $Package.Path,
+    '--no-audit',
+    '--no-fund',
+    '--fetch-retries', '2',
+    '--fetch-retry-maxtimeout', '20000',
+    '--fetch-timeout', '120000'
+  )
+
+  if ($code -ne 0) {
+    Stop-Launcher ("npm failed to install {0}. Check the log for details." -f $script:AppName)
+  }
+
+  if (-not (Test-Path -LiteralPath $script:AppEntry -PathType Leaf)) {
+    Stop-Launcher ("Installed launcher entry was not found: {0}" -f $script:AppEntry)
+  }
+
+  Set-Content -LiteralPath $script:AppVersionMarker -Encoding ASCII -Value $Package.Version
+  Write-Status OK ("{0} installed." -f $script:AppName) ("Version {0}" -f $Package.Version)
+  Write-Log ("{0} installed successfully" -f $script:AppName)
+}
+
+function Start-LauncherApp {
+  if (-not (Test-Path -LiteralPath $script:AppEntry -PathType Leaf)) {
+    Stop-Launcher ("Installed launcher entry was not found: {0}" -f $script:AppEntry)
+  }
+
+  Write-Section 'Launch'
+  Write-Status STEP ("Preparing interactive launch for {0}." -f $script:AppName)
+  Write-KeyValue 'Node.js' $script:NodeExe
+  Write-KeyValue 'Entry' $script:AppEntry
+  Write-KeyValue 'Working dir' $script:AppDir
+  Write-Status STEP 'Handing off to cmd.exe for the interactive TUI.' 'This avoids Windows PowerShell swallowing Ink input or screen updates.'
+  Write-Log ("Preparing delegated launch: {0} {1}" -f $script:NodeExe, $script:AppEntry)
+
+  Write-LaunchHandoff
+  $script:LaunchDelegated = $true
+  return $script:DelegatedLaunchExitCode
+}
+
+function Write-LaunchHandoff {
+  if ([string]::IsNullOrWhiteSpace($script:RunFile)) {
+    Stop-Launcher 'Launcher handoff path was not provided.'
+  }
+
+  $nodeBin = Split-Path -Parent $script:NodeExe
+  $npmBin = Join-Path $script:NpmPrefix 'node_modules\.bin'
+  $gitBin = ''
+  if ($script:GitExe) {
+    $gitBin = Split-Path -Parent $script:GitExe
+  }
+
+  $pathPrefix = @($nodeBin, $script:NpmPrefix, $npmBin, $gitBin) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    ForEach-Object { ConvertTo-BatchLiteral $_ }
+
+  $lines = @(
+    '@echo off',
+    'setlocal EnableExtensions DisableDelayedExpansion',
+    'title llamacpp-launcher',
+    ('set "PATH={0};%PATH%"' -f ($pathPrefix -join ';')),
+    ('set "LLAMACPP_LAUNCHER_HOME={0}"' -f (ConvertTo-BatchLiteral $script:InstallRoot)),
+    ('set "npm_config_prefix={0}"' -f (ConvertTo-BatchLiteral $script:NpmPrefix)),
+    ('set "npm_config_cache={0}"' -f (ConvertTo-BatchLiteral $script:NpmCache)),
+    ('cd /d "{0}"' -f (ConvertTo-BatchLiteral $script:AppDir)),
+    'cls',
+    ('>> "{0}" echo [%DATE% %TIME%] Starting {1} from delegated cmd handoff' -f (ConvertTo-BatchLiteral $script:LogFile), $script:AppName),
+    ('"{0}" "{1}"' -f (ConvertTo-BatchLiteral $script:NodeExe), (ConvertTo-BatchLiteral $script:AppEntry)),
+    'set "APP_EXIT=%ERRORLEVEL%"',
+    ('>> "{0}" echo [%DATE% %TIME%] {1} exited with code %APP_EXIT%' -f (ConvertTo-BatchLiteral $script:LogFile), $script:AppName),
+    'echo.',
+    'echo -- Stopped ------------------------------------------------',
+    ('if "%APP_EXIT%"=="0" (echo   [OK]    {0} exited with code 0.) else (echo   [WARN]  {0} exited with code %APP_EXIT%.)' -f $script:AppName),
+    ('echo   Log file: {0}' -f (ConvertTo-BatchLiteral $script:LogFile)),
+    'echo.',
+    'pause',
+    'exit /b %APP_EXIT%'
+  )
+
+  try {
+    Set-Content -LiteralPath $script:RunFile -Encoding ASCII -Value $lines
+    Write-Log ("Delegated launch file written: {0}" -f $script:RunFile)
+  } catch {
+    Stop-Launcher ("Failed to write launcher handoff file: {0}" -f $_.Exception.Message)
+  }
+}
+
+function Invoke-SelfTest {
+  Write-Header
+  Write-Section 'Self-test'
+  if (-not (Test-Path -LiteralPath $script:BatchPath -PathType Leaf)) {
+    Stop-Launcher ("Batch path does not exist: {0}" -f $script:BatchPath)
+  }
+
+  if (-not (Test-IsNewerVersion -Candidate '1.0.2' -Installed '1.0.1')) {
+    Stop-Launcher 'Version comparison self-test failed.'
+  }
+
+  if (Test-IsNewerVersion -Candidate '1.0.1' -Installed '1.0.2') {
+    Stop-Launcher 'Reverse version comparison self-test failed.'
+  }
+
+  $package = Select-Package
+  if ($package) {
+    Write-Status OK 'Package discovery self-test passed.' $package.Name
+  } else {
+    Write-Status WARN 'Package discovery self-test passed with no package found.'
+  }
+
+  $originalRunFile = $script:RunFile
+  $originalNodeExe = $script:NodeExe
+  $originalNpmCmd = $script:NpmCmd
+  $originalGitExe = $script:GitExe
+  $originalAppDir = $script:AppDir
+  $originalAppEntry = $script:AppEntry
+  $testRunFile = Join-Path ([IO.Path]::GetTempPath()) ("llamacpp-launcher-self-test-{0}.cmd" -f $PID)
+  try {
+    $script:RunFile = $testRunFile
+    $script:NodeExe = $env:ComSpec
+    $script:NpmCmd = $env:ComSpec
+    $script:GitExe = $env:ComSpec
+    $script:AppDir = $script:ScriptDir
+    $script:AppEntry = $script:BatchPath
+    Write-LaunchHandoff
+    if (-not (Test-Path -LiteralPath $testRunFile -PathType Leaf)) {
+      Stop-Launcher 'Launch handoff self-test failed.'
+    }
+    Write-Status OK 'Launch handoff self-test passed.'
+  } finally {
+    $script:RunFile = $originalRunFile
+    $script:NodeExe = $originalNodeExe
+    $script:NpmCmd = $originalNpmCmd
+    $script:GitExe = $originalGitExe
+    $script:AppDir = $originalAppDir
+    $script:AppEntry = $originalAppEntry
+    Remove-Item -LiteralPath $testRunFile -Force -ErrorAction SilentlyContinue
+  }
+
+  Write-Status OK 'PowerShell payload parsed successfully.'
+  Write-Status OK 'Launcher self-test completed.'
+  return 0
+}
+
+function Invoke-Main {
+  Initialize-Paths
+  Start-Log
+  Write-Log ("Install root: {0}" -f $script:InstallRoot)
+
+  if ($env:LAUNCHER_SELF_TEST -eq '1') {
+    return Invoke-SelfTest
+  }
+
+  Write-Header
+  Write-Status INFO 'This launcher checks prerequisites, installs or updates the packaged app, and starts it.'
+
+  Ensure-Node
+  Ensure-Git
+  Apply-NodePath
+  Prepare-NpmDirs
+
+  $package = Select-Package
+  $installed = Resolve-InstalledVersion
+  $decision = Get-InstallDecision -Package $package -Installed $installed
+
+  Write-Section 'Install decision'
+  if ($decision.NeedInstall) {
+    Write-Status STEP 'Installation or update is required.' $decision.Reason
+    Install-Launcher -Package $package
+    $installed = Resolve-InstalledVersion
+  } else {
+    Write-Status OK 'Installed launcher is ready.' $decision.Reason
+  }
+
+  return Start-LauncherApp
+}
+
+$exitCode = 1
+try {
+  $exitCode = Invoke-Main
+} catch {
+  $message = $_.Exception.Message
+  Write-Log ("Failed: {0}" -f $message)
+  Write-Section 'Failure'
+  Write-Status ERROR 'Launcher failed.' $message
+  Write-KeyValue 'Log file' $script:LogFile
+  $exitCode = $script:FailureCode
+  if ($exitCode -eq 0) {
+    $exitCode = 1
+  }
+} finally {
+  Pause-IfInteractive
+}
+
+exit $exitCode
