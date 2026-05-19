@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { existsSync, statSync } from 'node:fs';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
@@ -6,7 +7,7 @@ import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { validateLlamaCppDir, saveUserConfig } from '../config.js';
 import { useInstaller } from '../hooks/useInstaller.js';
-import { getDataRoot } from '../storage.js';
+import { getDataPath, getDataRoot } from '../storage.js';
 import type { StoredConfig } from '../types.js';
 import { theme } from '../theme.js';
 
@@ -47,11 +48,82 @@ const REBUILD_INDEX = FIELDS.length + 1;
 const SAVE_INDEX = FIELDS.length + 2;
 const DISCARD_INDEX = FIELDS.length + 3;
 const TOTAL_ITEMS = FIELDS.length + 4; // fields + update + rebuild + save + discard
+const TABS_INDEX = -1;
 
 type InstallAction = 'update' | 'rebuild';
+type SettingsTab = 'config' | 'info';
+
+const TABS: Array<{ key: SettingsTab; label: string }> = [
+  { key: 'config', label: 'Config' },
+  { key: 'info', label: 'Info' },
+];
+
+function formatStateFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatStateFileTime(date: Date): string {
+  return date.toLocaleString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function SettingsTabs({
+  activeTab,
+  focused,
+}: {
+  activeTab: SettingsTab;
+  focused: boolean;
+}) {
+  return (
+    <Box marginLeft={2} marginBottom={1}>
+      {TABS.map(tab => {
+        const active = tab.key === activeTab;
+        return (
+          <Box key={tab.key} marginRight={1}>
+            <Text
+              color={active ? '#000000' : 'white'}
+              backgroundColor={active ? focused ? theme.accent : 'white' : undefined}
+              bold={active}
+            >
+              {` ${tab.label} `}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+function getStateFileInfo(fileName: string) {
+  const path = getDataPath(fileName);
+  if (!existsSync(path)) {
+    return { fileName, path, status: 'missing' as const };
+  }
+
+  try {
+    const stat = statSync(path);
+    return {
+      fileName,
+      path,
+      status: 'present' as const,
+      size: formatStateFileSize(stat.size),
+      modified: formatStateFileTime(stat.mtime),
+    };
+  } catch {
+    return { fileName, path, status: 'unreadable' as const };
+  }
+}
 
 export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(TABS_INDEX);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [pathStatus, setPathStatus] = useState('');
@@ -76,8 +148,21 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
     draftTokens: currentConfig.draftTokens,
   });
 
+  const activeTab = TABS[activeTabIndex].key;
   const hostIdx = HOST_OPTIONS.findIndex(o => o.value === values.host);
   const dataRoot = getDataRoot();
+  const stateFiles = activeTab === 'info' ? STATE_FILES.map(getStateFileInfo) : [];
+
+  const switchTab = () => {
+    setEditing(false);
+    setActiveTabIndex(index => (index + 1) % TABS.length);
+    setSelectedIndex(TABS_INDEX);
+  };
+
+  const moveActiveTab = (dir: -1 | 1) => {
+    setActiveTabIndex(index => (index + dir + TABS.length) % TABS.length);
+    setSelectedIndex(TABS_INDEX);
+  };
 
   const clearFieldError = (key: FieldKey) => {
     setFieldErrors(prev => {
@@ -145,15 +230,38 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
       return;
     }
 
+    if (key.tab || input === '\t') {
+      switchTab();
+      return;
+    }
+
     if (key.escape) {
       onDone(false, sourceChanged);
+      return;
+    }
+
+    if (selectedIndex === TABS_INDEX) {
+      if (key.leftArrow) {
+        moveActiveTab(-1);
+      } else if (key.rightArrow) {
+        moveActiveTab(1);
+      } else if (key.downArrow && activeTab === 'config') {
+        setSelectedIndex(0);
+      }
+      return;
+    }
+
+    if (activeTab === 'info') {
+      if (key.upArrow) {
+        setSelectedIndex(TABS_INDEX);
+      }
       return;
     }
 
     if (installRunning) return;
 
     if (key.upArrow) {
-      setSelectedIndex(i => Math.max(0, i - 1));
+      setSelectedIndex(i => i <= 0 ? TABS_INDEX : i - 1);
     } else if (key.downArrow) {
       setSelectedIndex(i => Math.min(TOTAL_ITEMS - 1, i + 1));
     } else if (key.return) {
@@ -200,163 +308,203 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
   return (
     <Box flexDirection="column">
       <Header title="SETTINGS" />
+      <SettingsTabs
+        activeTab={activeTab}
+        focused={selectedIndex === TABS_INDEX}
+      />
 
-      <Box flexDirection="column" marginLeft={2}>
-        {FIELDS.map((field, i) => {
-          const isSelected = i === selectedIndex;
-          const value = values[field.key];
-          const error = field.key === 'llamaCppDir' ? pathStatus : fieldErrors[field.key];
+      {activeTab === 'config' ? (
+        <Box flexDirection="column" marginLeft={2}>
+          {FIELDS.map((field, i) => {
+            const isSelected = i === selectedIndex;
+            const value = values[field.key];
+            const error = field.key === 'llamaCppDir' ? pathStatus : fieldErrors[field.key];
 
-          let displayValue: string;
-          if (field.type === 'toggle') {
-            const opt = HOST_OPTIONS.find(o => o.value === value);
-            displayValue = opt?.label || String(value);
-          } else {
-            displayValue = String(value) || '(not set)';
-          }
+            let displayValue: string;
+            if (field.type === 'toggle') {
+              const opt = HOST_OPTIONS.find(o => o.value === value);
+              displayValue = opt?.label || String(value);
+            } else {
+              displayValue = String(value) || '(not set)';
+            }
 
-          const isEditing = editing && isSelected;
+            const isEditing = editing && isSelected;
 
-          return (
-            <Box key={field.key} flexDirection="column" marginBottom={0}>
-              <Box>
-                <Text color={isSelected ? theme.marker : undefined}>
-                  {isSelected ? ' › ' : '   '}
-                </Text>
-                <Box width={18}>
-                  <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
-                    {field.label}
+            return (
+              <Box key={field.key} flexDirection="column" marginBottom={0}>
+                <Box>
+                  <Text color={isSelected ? theme.marker : undefined}>
+                    {isSelected ? ' › ' : '   '}
                   </Text>
-                </Box>
-                {isEditing ? (
-                  <Box>
-                    <TextInput
-                      value={editValue}
-                      onChange={setEditValue}
-                      onSubmit={submitTextEdit}
-                    />
-                  </Box>
-                ) : (
-                  <Box>
-                    {field.type !== 'text' && (
-                      <Text color={isSelected ? theme.accent : theme.neutral}> {'◂'} </Text>
-                    )}
-                    <Text color={isSelected ? 'white' : undefined}>
-                      {!value && field.type === 'text' ? '' : displayValue}
+                  <Box width={18}>
+                    <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+                      {field.label}
                     </Text>
-                    {!value && field.type === 'text' && (
-                      <Text dimColor>(not set)</Text>
-                    )}
-                    {field.type !== 'text' && (
-                      <Text color={isSelected ? theme.accent : theme.neutral}> {'▸'}</Text>
-                    )}
+                  </Box>
+                  {isEditing ? (
+                    <Box>
+                      <TextInput
+                        value={editValue}
+                        onChange={setEditValue}
+                        onSubmit={submitTextEdit}
+                      />
+                    </Box>
+                  ) : (
+                    <Box>
+                      {field.type !== 'text' && (
+                        <Text color={isSelected ? theme.accent : theme.neutral}> {'◂'} </Text>
+                      )}
+                      <Text color={isSelected ? 'white' : undefined}>
+                        {!value && field.type === 'text' ? '' : displayValue}
+                      </Text>
+                      {!value && field.type === 'text' && (
+                        <Text dimColor>(not set)</Text>
+                      )}
+                      {field.type !== 'text' && (
+                        <Text color={isSelected ? theme.accent : theme.neutral}> {'▸'}</Text>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+                <Box marginLeft={3}>
+                  <Text dimColor>{'  '.repeat(9)}{field.desc}</Text>
+                </Box>
+                {error && (
+                  <Box marginLeft={3} flexDirection="column">
+                    {error.split('\n').map((line, j) => (
+                      <Text key={j} color={theme.danger}>{'  '.repeat(9)}{line}</Text>
+                    ))}
                   </Box>
                 )}
               </Box>
-              <Box marginLeft={3}>
-                <Text dimColor>{'  '.repeat(9)}{field.desc}</Text>
-              </Box>
-              {error && (
-                <Box marginLeft={3} flexDirection="column">
-                  {error.split('\n').map((line, j) => (
-                    <Text key={j} color={theme.danger}>{'  '.repeat(9)}{line}</Text>
-                  ))}
+            );
+          })}
+
+          <Box marginTop={1} flexDirection="column">
+            <Box>
+              <Text color={selectedIndex === UPDATE_INDEX ? theme.marker : undefined}>
+                {selectedIndex === UPDATE_INDEX ? ' › ' : '   '}
+              </Text>
+              <Text color={selectedIndex === UPDATE_INDEX ? theme.accent : theme.textMuted} bold={selectedIndex === UPDATE_INDEX}>
+                Update llama.cpp (git pull)
+              </Text>
+              {activeAction === 'update' && installRunning && (
+                <Box marginLeft={1}>
+                  <Text color={theme.accent}><Spinner type="dots" /></Text>
+                  <Text dimColor> {installProgress?.message || 'Updating...'}</Text>
                 </Box>
               )}
             </Box>
-          );
-        })}
-
-        <Box marginTop={1} flexDirection="column">
-          <Box>
-            <Text color={selectedIndex === UPDATE_INDEX ? theme.marker : undefined}>
-              {selectedIndex === UPDATE_INDEX ? ' › ' : '   '}
-            </Text>
-            <Text color={selectedIndex === UPDATE_INDEX ? theme.accent : theme.textMuted} bold={selectedIndex === UPDATE_INDEX}>
-              Update llama.cpp (git pull)
-            </Text>
-            {activeAction === 'update' && installRunning && (
-              <Box marginLeft={1}>
-                <Text color={theme.accent}><Spinner type="dots" /></Text>
-                <Text dimColor> {installProgress?.message || 'Updating...'}</Text>
+            {activeAction === 'update' && installCompleted && (
+              <Box marginLeft={3}>
+                <Text color={theme.success}> {installProgress?.message || 'Update complete!'}</Text>
+              </Box>
+            )}
+            {activeAction === 'update' && installError && (
+              <Box marginLeft={3} flexDirection="column">
+                {installError.split('\n').slice(0, 5).map((line, i) => (
+                  <Text key={i} color={theme.danger}> {line}</Text>
+                ))}
               </Box>
             )}
           </Box>
-          {activeAction === 'update' && installCompleted && (
+
+          <Box marginTop={1}>
+            <Text color={selectedIndex === REBUILD_INDEX ? theme.marker : undefined}>
+              {selectedIndex === REBUILD_INDEX ? ' › ' : '   '}
+            </Text>
+            <Text color={selectedIndex === REBUILD_INDEX ? theme.accent : theme.textMuted} bold={selectedIndex === REBUILD_INDEX}>
+              Rebuild llama.cpp
+            </Text>
+            {activeAction === 'rebuild' && installRunning && (
+              <Box marginLeft={1}>
+                <Text color={theme.accent}><Spinner type="dots" /></Text>
+                <Text dimColor> {installProgress?.message || 'Rebuilding...'}</Text>
+              </Box>
+            )}
+          </Box>
+          {activeAction === 'rebuild' && installCompleted && (
             <Box marginLeft={3}>
-              <Text color={theme.success}> {installProgress?.message || 'Update complete!'}</Text>
+              <Text color={theme.success}> {installProgress?.message || 'Rebuild complete!'}</Text>
             </Box>
           )}
-          {activeAction === 'update' && installError && (
+          {activeAction === 'rebuild' && installError && (
             <Box marginLeft={3} flexDirection="column">
               {installError.split('\n').slice(0, 5).map((line, i) => (
                 <Text key={i} color={theme.danger}> {line}</Text>
               ))}
             </Box>
           )}
-        </Box>
 
-        <Box marginTop={1}>
-          <Text color={selectedIndex === REBUILD_INDEX ? theme.marker : undefined}>
-            {selectedIndex === REBUILD_INDEX ? ' › ' : '   '}
-          </Text>
-          <Text color={selectedIndex === REBUILD_INDEX ? theme.accent : theme.textMuted} bold={selectedIndex === REBUILD_INDEX}>
-            Rebuild llama.cpp
-          </Text>
-          {activeAction === 'rebuild' && installRunning && (
-            <Box marginLeft={1}>
-              <Text color={theme.accent}><Spinner type="dots" /></Text>
-              <Text dimColor> {installProgress?.message || 'Rebuilding...'}</Text>
-            </Box>
-          )}
-        </Box>
-        {activeAction === 'rebuild' && installCompleted && (
-          <Box marginLeft={3}>
-            <Text color={theme.success}> {installProgress?.message || 'Rebuild complete!'}</Text>
+          <Box marginTop={1}>
+            <Text color={selectedIndex === SAVE_INDEX ? theme.marker : undefined}>
+              {selectedIndex === SAVE_INDEX ? ' › ' : '   '}
+            </Text>
+            <Text color={selectedIndex === SAVE_INDEX ? theme.success : theme.textMuted} bold={selectedIndex === SAVE_INDEX}>
+              Save and return
+            </Text>
           </Box>
-        )}
-        {activeAction === 'rebuild' && installError && (
-          <Box marginLeft={3} flexDirection="column">
-            {installError.split('\n').slice(0, 5).map((line, i) => (
-              <Text key={i} color={theme.danger}> {line}</Text>
+
+          <Box>
+            <Text color={selectedIndex === DISCARD_INDEX ? theme.marker : undefined}>
+              {selectedIndex === DISCARD_INDEX ? ' › ' : '   '}
+            </Text>
+            <Text color={selectedIndex === DISCARD_INDEX ? theme.danger : theme.textMuted} bold={selectedIndex === DISCARD_INDEX}>
+              Discard changes
+            </Text>
+          </Box>
+        </Box>
+      ) : (
+        <Box flexDirection="column" marginLeft={2}>
+          <Box flexDirection="column" marginBottom={1}>
+            <Text color={theme.textMuted} bold>State root</Text>
+            <Text>{dataRoot}</Text>
+          </Box>
+
+          <Box flexDirection="column" marginBottom={1}>
+            <Text color={theme.textMuted} bold>Environment override</Text>
+            <Text dimColor>LLAMACPP_LAUNCHER_HOME</Text>
+          </Box>
+
+          <Box flexDirection="column">
+            <Text color={theme.textMuted} bold>State files</Text>
+            {stateFiles.map(file => (
+              <Box key={file.fileName} flexDirection="column" marginTop={1}>
+                <Box>
+                  <Box width={26}>
+                    <Text color={file.status === 'present' ? 'white' : theme.warning}>{file.fileName}</Text>
+                  </Box>
+                  <Text color={file.status === 'present' ? theme.success : theme.warning}>
+                    {file.status}
+                  </Text>
+                  {file.status === 'present' && (
+                    <Text dimColor>  {file.size}  {file.modified}</Text>
+                  )}
+                </Box>
+                <Box marginLeft={2}>
+                  <Text dimColor>{file.path}</Text>
+                </Box>
+              </Box>
             ))}
           </Box>
-        )}
-
-        <Box marginTop={1}>
-          <Text color={selectedIndex === SAVE_INDEX ? theme.marker : undefined}>
-            {selectedIndex === SAVE_INDEX ? ' › ' : '   '}
-          </Text>
-          <Text color={selectedIndex === SAVE_INDEX ? theme.success : theme.textMuted} bold={selectedIndex === SAVE_INDEX}>
-            Save and return
-          </Text>
         </Box>
-
-        <Box>
-          <Text color={selectedIndex === DISCARD_INDEX ? theme.marker : undefined}>
-            {selectedIndex === DISCARD_INDEX ? ' › ' : '   '}
-          </Text>
-          <Text color={selectedIndex === DISCARD_INDEX ? theme.danger : theme.textMuted} bold={selectedIndex === DISCARD_INDEX}>
-            Discard changes
-          </Text>
-        </Box>
-
-        <Box marginTop={1} flexDirection="column">
-          <Text color={theme.textMuted} bold>State files</Text>
-          <Text dimColor>   Folder: {dataRoot}</Text>
-          <Text dimColor>   Files: {STATE_FILES.join(', ')}</Text>
-          <Text dimColor>   Override: LLAMACPP_LAUNCHER_HOME</Text>
-        </Box>
-      </Box>
+      )}
 
       <Box marginLeft={2}>
         <KeyHint hints={
           editing
             ? [{ key: '⏎', label: 'confirm' }, { key: 'esc', label: 'cancel' }]
-            : [
+            : activeTab === 'config'
+              ? [
               { key: '↑↓', label: 'navigate' },
               { key: '⏎', label: 'edit/select' },
-              { key: '←→', label: 'adjust' },
+              { key: '←→', label: selectedIndex === TABS_INDEX ? 'switch tab' : 'adjust' },
+              { key: 'tab', label: 'info' },
+              { key: 'esc', label: 'back' },
+            ]
+              : [
+              { key: '←→', label: 'switch tab' },
+              { key: 'tab', label: 'config' },
               { key: 'esc', label: 'back' },
             ]
         } />
