@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
-import { loadHistory, removeFromHistory } from '../services/params-history.js';
+import { loadHistory, removeFromHistory, type HistoryEntry } from '../services/params-history.js';
+import { useScrollableViewport } from '../hooks/useScrollableViewport.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
+import { truncateText } from '../utils/terminal.js';
 import type { ParamsProfile, ModelParams } from '../types.js';
 import { theme } from '../theme.js';
 
@@ -39,7 +42,12 @@ function formatParamsRaw(params: ModelParams): string {
 
 export function ParamsSelect({ presetName, profiles, hasTemplate, hasTemplateOverride, onSelect, onCustom, onExpert, onExpertDirect, onTemplate, onBack }: ParamsSelectProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [history, setHistory] = useState(() => loadHistory());
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const { columns } = useTerminalViewport();
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
 
   const recentStart = profiles.length;
 
@@ -69,6 +77,19 @@ export function ParamsSelect({ presetName, profiles, hasTemplate, hasTemplateOve
     { name: 'Expert (raw flags)', desc: 'type llama-server CLI flags directly', action: { type: 'expert' } },
     { name: 'llama.cpp defaults', desc: 'no sampling params specified', action: { type: 'preset', params: null } },
   ];
+  const listViewport = useScrollableViewport({
+    itemCount: items.length,
+    selectedIndex,
+    reservedRows: hasTemplate || hasTemplateOverride ? 11 : 9,
+    minRows: 4,
+    itemRows: 2,
+  });
+  const visibleItems = items.slice(listViewport.start, listViewport.end);
+  const maxLineWidth = Math.max(24, columns - 10);
+
+  useEffect(() => {
+    setSelectedIndex(i => Math.min(i, Math.max(0, items.length - 1)));
+  }, [items.length]);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -79,19 +100,20 @@ export function ParamsSelect({ presetName, profiles, hasTemplate, hasTemplateOve
       setSelectedIndex(i => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setSelectedIndex(i => Math.min(items.length - 1, i + 1));
-    } else if (input === 't' || input === 'T' || input === 'е' || input === 'Е') {
+    } else if (input === 't' || input === 'T' || input === '\u0435' || input === '\u0415') {
       onTemplate();
       return;
-    } else if (input === 'd' || input === 'D' || input === 'в' || input === 'В') {
+    } else if (input === 'd' || input === 'D' || input === '\u0432' || input === '\u0412') {
       const historyIndex = selectedIndex - recentStart;
       if (historyIndex >= 0 && historyIndex < history.length) {
         removeFromHistory(historyIndex);
         setHistory(prev => prev.filter((_, i) => i !== historyIndex));
-        setSelectedIndex(i => Math.min(i, items.length - 2));
+        setSelectedIndex(i => Math.min(i, Math.max(0, items.length - 2)));
       }
       return;
     } else if (key.return) {
-      const action = items[selectedIndex].action;
+      const action = items[selectedIndex]?.action;
+      if (!action) return;
       if (action.type === 'preset') {
         onSelect(action.params);
       } else if (action.type === 'custom') {
@@ -109,11 +131,13 @@ export function ParamsSelect({ presetName, profiles, hasTemplate, hasTemplateOve
       <Header title="SAMPLING PARAMETERS" subtitle={`Preset: ${presetName}`} />
 
       <Box flexDirection="column" marginLeft={2}>
-        {items.map((item, i) => {
+        {listViewport.hasAbove && <Text dimColor>  ... more above</Text>}
+        {visibleItems.map((item, offset) => {
+          const i = listViewport.start + offset;
           const isSelected = i === selectedIndex;
 
           return (
-            <Box key={`${item.name}-${i}`} flexDirection="column" marginBottom={item.desc ? 1 : 0}>
+            <Box key={`${item.name}-${i}`} flexDirection="column">
               <Box>
                 <Text color={isSelected ? theme.marker : undefined}>
                   {isSelected ? ' › ' : '   '}
@@ -124,17 +148,18 @@ export function ParamsSelect({ presetName, profiles, hasTemplate, hasTemplateOve
                   </Text>
                 </Box>
                 <Text color={isSelected ? 'white' : undefined} bold={isSelected}>
-                  {item.name}
+                  {truncateText(item.name, maxLineWidth)}
                 </Text>
               </Box>
               {item.desc && (
                 <Box marginLeft={8}>
-                  <Text dimColor>{item.desc}</Text>
+                  <Text dimColor>{truncateText(item.desc, maxLineWidth)}</Text>
                 </Box>
               )}
             </Box>
           );
         })}
+        {listViewport.hasBelow && <Text dimColor>  ... more below</Text>}
       </Box>
 
       {(hasTemplate || hasTemplateOverride) && (

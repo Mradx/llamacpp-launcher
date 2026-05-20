@@ -7,7 +7,10 @@ import { KeyHint } from '../components/KeyHint.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { CONTENT_MARGIN_X, PAGE_MARGIN_X } from '../layout.js';
 import { formatSize } from '../utils/format.js';
+import { truncateText } from '../utils/terminal.js';
 import { getSiblingModels } from '../services/models.js';
+import { useScrollableViewport } from '../hooks/useScrollableViewport.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import type { LocalModel, ModelMetadata, ModelSelection } from '../types.js';
 import type { VersionInfo } from '../services/llamacpp-version.js';
 import { theme } from '../theme.js';
@@ -44,14 +47,27 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
   const [showHfInput, setShowHfInput] = useState(false);
   const [hfInput, setHfInput] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<LocalModel | null>(null);
+  const { columns } = useTerminalViewport();
 
   const hfIndex = models.length;
   const settingsIndex = models.length + 1;
   const totalItems = models.length + 2;
+  const listViewport = useScrollableViewport({
+    itemCount: totalItems,
+    selectedIndex,
+    reservedRows: confirmDelete ? 16 : showHfInput ? 14 : 12,
+    minRows: 4,
+    itemRows: 3,
+  });
+  const visibleIndexes = Array.from(
+    { length: listViewport.end - listViewport.start },
+    (_, i) => listViewport.start + i,
+  );
+  const maxLineWidth = Math.max(24, columns - 12);
 
   useEffect(() => {
-    setSelectedIndex(i => Math.min(i, Math.max(0, models.length)));
-  }, [models.length]);
+    setSelectedIndex(i => Math.min(i, Math.max(0, totalItems - 1)));
+  }, [totalItems]);
 
   const cancelHfInput = () => {
     setShowHfInput(false);
@@ -73,7 +89,7 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
       return;
     }
 
-    if (input === 'q' || input === 'Q' || input === 'й' || input === 'Й') {
+    if (input === 'q' || input === 'Q' || input === '\u0439' || input === '\u0419') {
       onQuit();
       return;
     }
@@ -82,7 +98,7 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
       setSelectedIndex(i => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setSelectedIndex(i => Math.min(totalItems - 1, i + 1));
-    } else if (input === 'd' || input === 'D' || input === 'в' || input === 'В') {
+    } else if (input === 'd' || input === 'D' || input === '\u0432' || input === '\u0412') {
       if (selectedIndex < models.length) {
         setConfirmDelete(models[selectedIndex]);
       }
@@ -114,6 +130,75 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
     cancelHfInput();
   };
 
+  const renderItem = (index: number) => {
+    if (index < models.length) {
+      const model = models[index];
+      const isSelected = index === selectedIndex;
+      const name = model.metadata?.name || model.repoId;
+      const meta = model.metadata ? metadataSummary(model.metadata, model.fileName) : undefined;
+      const size = formatSize(model.sizeBytes);
+
+      return (
+        <Box key={model.path} flexDirection="column">
+          <Box>
+            <Text color={isSelected ? theme.marker : undefined}>
+              {isSelected ? ' › ' : '   '}
+            </Text>
+            <Box width={4}>
+              <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+                {index + 1}.
+              </Text>
+            </Box>
+            <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+              {truncateText(name, maxLineWidth)}
+            </Text>
+          </Box>
+          <Box marginLeft={8}>
+            <Text dimColor>{truncateText(model.fileName, maxLineWidth)}</Text>
+          </Box>
+          <Box marginLeft={8}>
+            <Text color={theme.accentMuted}>{size}</Text>
+            {meta && <Text dimColor>  {truncateText(meta, Math.max(12, maxLineWidth - size.length - 2))}</Text>}
+          </Box>
+        </Box>
+      );
+    }
+
+    if (index === hfIndex) {
+      const isSelected = selectedIndex === hfIndex;
+      return (
+        <Box key="hf-input-action">
+          <Text color={isSelected ? theme.marker : undefined}>
+            {isSelected ? ' › ' : '   '}
+          </Text>
+          <Box width={4}>
+            <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+              {models.length + 1}.
+            </Text>
+          </Box>
+          <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+            Enter Hugging Face repo or URL...
+          </Text>
+        </Box>
+      );
+    }
+
+    const isSelected = selectedIndex === settingsIndex;
+    return (
+      <Box key="settings-action">
+        <Text color={isSelected ? theme.marker : undefined}>
+          {isSelected ? ' › ' : '   '}
+        </Text>
+        <Box width={4}>
+          <Text> </Text>
+        </Box>
+        <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+          Settings...
+        </Text>
+      </Box>
+    );
+  };
+
   return (
     <Box flexDirection="column">
       <Header title="LOCAL MODELS" version={version} />
@@ -121,7 +206,7 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
       <Box flexDirection="column" marginLeft={2} marginBottom={1}>
         <Box>
           <Text dimColor>Cache: </Text>
-          <Text>{hfCachePath}</Text>
+          <Text>{truncateText(hfCachePath, Math.max(20, columns - 9))}</Text>
         </Box>
       </Box>
 
@@ -132,52 +217,22 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
         </Box>
       ) : (
         <Box flexDirection="column" marginLeft={PAGE_MARGIN_X}>
-
           <Box flexDirection="column" marginLeft={CONTENT_MARGIN_X - PAGE_MARGIN_X}>
-            {models.length === 0 && (
-              <Box marginY={1}>
+            {models.length === 0 && listViewport.start === 0 && (
+              <Box>
                 <Text dimColor italic>  No local GGUF files found</Text>
               </Box>
             )}
 
-            {models.map((model, i) => (
-              <Box key={model.path} flexDirection="column" marginBottom={1}>
-                <Box>
-                  <Text color={i === selectedIndex ? theme.marker : undefined}>
-                    {i === selectedIndex ? ' › ' : '   '}
-                  </Text>
-                  <Box width={4}>
-                    <Text color={i === selectedIndex ? 'white' : theme.textMuted} bold={i === selectedIndex}>
-                      {i + 1}.
-                    </Text>
-                  </Box>
-                  <Text color={i === selectedIndex ? 'white' : theme.textMuted} bold={i === selectedIndex}>
-                    {model.metadata?.name || model.repoId}
-                  </Text>
-                </Box>
-                <Box marginLeft={8}>
-                  <Text dimColor>{model.fileName}</Text>
-                </Box>
-                <Box marginLeft={8}>
-                  <Text color={theme.accentMuted}>{formatSize(model.sizeBytes)}</Text>
-                  {model.metadata && <Text dimColor>  {metadataSummary(model.metadata, model.fileName)}</Text>}
-                </Box>
-              </Box>
-            ))}
+            {listViewport.hasAbove && (
+              <Text dimColor>  ... more above</Text>
+            )}
 
-            <Box>
-              <Text color={selectedIndex === hfIndex ? theme.marker : undefined}>
-                {selectedIndex === hfIndex ? ' › ' : '   '}
-              </Text>
-              <Box width={4}>
-                <Text color={selectedIndex === hfIndex ? 'white' : theme.textMuted} bold={selectedIndex === hfIndex}>
-                  {models.length + 1}.
-                </Text>
-              </Box>
-              <Text color={selectedIndex === hfIndex ? 'white' : theme.textMuted} bold={selectedIndex === hfIndex}>
-                Enter Hugging Face repo or URL...
-              </Text>
-            </Box>
+            {visibleIndexes.map(renderItem)}
+
+            {listViewport.hasBelow && (
+              <Text dimColor>  ... more below</Text>
+            )}
 
             {showHfInput && (
               <Box marginTop={1} marginLeft={8}>
@@ -190,20 +245,6 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
                 />
               </Box>
             )}
-
-            <Box marginTop={1}>
-              <Text color={selectedIndex === settingsIndex ? theme.marker : undefined}>
-                {selectedIndex === settingsIndex ? ' › ' : '   '}
-              </Text>
-              <Box width={4}>
-                <Text> </Text>
-              </Box>
-              <Text color={selectedIndex === settingsIndex ? 'white' : theme.textMuted} bold={selectedIndex === settingsIndex}>
-                Settings...
-              </Text>
-            </Box>
-
-            <Text> </Text>
           </Box>
         </Box>
       )}

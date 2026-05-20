@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { existsSync, statSync } from 'node:fs';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
@@ -8,6 +8,8 @@ import { KeyHint } from '../components/KeyHint.js';
 import { validateLlamaCppDir, saveUserConfig } from '../config.js';
 import { useInstaller } from '../hooks/useInstaller.js';
 import { getDataPath, getDataRoot } from '../storage.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
+import { clampLines, truncateText } from '../utils/terminal.js';
 import type { StoredConfig } from '../types.js';
 import { theme } from '../theme.js';
 
@@ -63,6 +65,7 @@ const TAB_BODY_HEIGHT = 21;
 
 type InstallAction = 'update' | 'rebuild';
 type SettingsTab = 'config' | 'info';
+type StateFileInfo = ReturnType<typeof getStateFileInfo>;
 
 const TABS: Array<{ key: SettingsTab; label: string }> = [
   { key: 'config', label: 'Config' },
@@ -133,6 +136,7 @@ function getStateFileInfo(fileName: string) {
 }
 
 export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
+  const { rows, columns } = useTerminalViewport();
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(TABS_INDEX);
   const [editing, setEditing] = useState(false);
@@ -140,6 +144,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
   const [pathStatus, setPathStatus] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [activeAction, setActiveAction] = useState<InstallAction | null>(null);
+  const [stateFiles, setStateFiles] = useState<StateFileInfo[]>([]);
   const {
     startUpdate,
     startRebuild,
@@ -162,10 +167,14 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
   const activeTab = TABS[activeTabIndex].key;
   const hostIdx = HOST_OPTIONS.findIndex(o => o.value === values.host);
   const dataRoot = getDataRoot();
-  const stateFiles = useMemo(
-    () => (activeTab === 'info' ? STATE_FILES.map(getStateFileInfo) : []),
-    [activeTab],
-  );
+  const bodyHeight = Math.max(8, rows - 8);
+  const maxLineWidth = Math.max(24, columns - 8);
+
+  useEffect(() => {
+    if (activeTab === 'info') {
+      setStateFiles(STATE_FILES.map(getStateFileInfo));
+    }
+  }, [activeTab]);
 
   const switchTab = () => {
     setEditing(false);
@@ -328,7 +337,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
       />
 
       {activeTab === 'config' ? (
-        <Box flexDirection="column" marginLeft={2} minHeight={TAB_BODY_HEIGHT}>
+        <Box flexDirection="column" marginLeft={2} minHeight={Math.min(TAB_BODY_HEIGHT, bodyHeight)} height={bodyHeight}>
           {FIELDS.map((field, i) => {
             const isSelected = i === selectedIndex;
             const value = values[field.key];
@@ -369,7 +378,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
                         <Text color={isSelected ? theme.accent : theme.neutral}> {'◂'} </Text>
                       )}
                       <Text color={isSelected ? 'white' : undefined}>
-                        {!value && field.type === 'text' ? '' : displayValue}
+                        {!value && field.type === 'text' ? '' : truncateText(displayValue, maxLineWidth - 24)}
                       </Text>
                       {!value && field.type === 'text' && (
                         <Text dimColor>(not set)</Text>
@@ -385,7 +394,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
                 </Box>
                 {error && (
                   <Box marginLeft={3} flexDirection="column">
-                    {error.split('\n').map((line, j) => (
+                    {clampLines(error, 2, maxLineWidth - 24).map((line, j) => (
                       <Text key={j} color={theme.danger}>{'  '.repeat(9)}{line}</Text>
                     ))}
                   </Box>
@@ -405,18 +414,18 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
               {activeAction === 'update' && installRunning && (
                 <Box marginLeft={1}>
                   <Text color={theme.accent}><Spinner type="dots" /></Text>
-                  <Text dimColor> {installProgress?.message || 'Updating...'}</Text>
+                  <Text dimColor> {truncateText(installProgress?.message || 'Updating...', maxLineWidth - 28)}</Text>
                 </Box>
               )}
             </Box>
             {activeAction === 'update' && installCompleted && (
               <Box marginLeft={3}>
-                <Text color={theme.success}> {installProgress?.message || 'Update complete!'}</Text>
+                <Text color={theme.success}> {truncateText(installProgress?.message || 'Update complete!', maxLineWidth - 6)}</Text>
               </Box>
             )}
             {activeAction === 'update' && installError && (
               <Box marginLeft={3} flexDirection="column">
-                {installError.split('\n').slice(0, 5).map((line, i) => (
+                {clampLines(installError, 4, maxLineWidth - 6).map((line, i) => (
                   <Text key={i} color={theme.danger}> {line}</Text>
                 ))}
               </Box>
@@ -433,18 +442,18 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
             {activeAction === 'rebuild' && installRunning && (
               <Box marginLeft={1}>
                 <Text color={theme.accent}><Spinner type="dots" /></Text>
-                <Text dimColor> {installProgress?.message || 'Rebuilding...'}</Text>
+                <Text dimColor> {truncateText(installProgress?.message || 'Rebuilding...', maxLineWidth - 28)}</Text>
               </Box>
             )}
           </Box>
           {activeAction === 'rebuild' && installCompleted && (
             <Box marginLeft={3}>
-              <Text color={theme.success}> {installProgress?.message || 'Rebuild complete!'}</Text>
+              <Text color={theme.success}> {truncateText(installProgress?.message || 'Rebuild complete!', maxLineWidth - 6)}</Text>
             </Box>
           )}
           {activeAction === 'rebuild' && installError && (
             <Box marginLeft={3} flexDirection="column">
-              {installError.split('\n').slice(0, 5).map((line, i) => (
+              {clampLines(installError, 4, maxLineWidth - 6).map((line, i) => (
                 <Text key={i} color={theme.danger}> {line}</Text>
               ))}
             </Box>
@@ -469,10 +478,10 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
           </Box>
         </Box>
       ) : (
-        <Box flexDirection="column" marginLeft={2} minHeight={TAB_BODY_HEIGHT}>
+        <Box flexDirection="column" marginLeft={2} minHeight={Math.min(TAB_BODY_HEIGHT, bodyHeight)} height={bodyHeight}>
           <Box flexDirection="column" marginBottom={1}>
             <Text color={theme.textMuted} bold>State root</Text>
-            <Text>{dataRoot}</Text>
+            <Text>{truncateText(dataRoot, maxLineWidth)}</Text>
           </Box>
 
           <Box flexDirection="column" marginBottom={1}>
@@ -496,7 +505,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
                   )}
                 </Box>
                 <Box marginLeft={2}>
-                  <Text dimColor>{file.path}</Text>
+                  <Text dimColor>{truncateText(file.path, maxLineWidth - 2)}</Text>
                 </Box>
               </Box>
             ))}

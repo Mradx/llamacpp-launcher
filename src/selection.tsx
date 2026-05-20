@@ -49,6 +49,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
 
   const [screen, setScreen] = useState<Screen>('model-select');
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsConfig, setSettingsConfig] = useState<StoredConfig | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelSelection | null>(null);
   const [quantLoading, setQuantLoading] = useState(false);
   const quantCancelledRef = useRef(false);
@@ -224,11 +225,13 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   };
 
   const handleSettings = () => {
+    setSettingsConfig(loadStoredConfig());
     setShowSettings(true);
   };
 
   const handleSettingsDone = (saved: boolean, updated?: boolean) => {
     setShowSettings(false);
+    setSettingsConfig(null);
     if (saved) {
       setConfigVersion(v => v + 1);
     }
@@ -247,10 +250,10 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     ? calculateKvCache(contextSize, effectiveMetadata, modelSizeBytes)
     : null;
 
-  if (showSettings) {
+  if (showSettings && settingsConfig) {
     return (
       <SettingsScreen
-        currentConfig={loadStoredConfig()}
+        currentConfig={settingsConfig}
         onDone={handleSettingsDone}
       />
     );

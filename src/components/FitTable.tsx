@@ -2,10 +2,12 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import type { HfFile, FitStatus } from '../types.js';
 import { fitStatusColor, theme } from '../theme.js';
+import { truncateText } from '../utils/terminal.js';
 
 interface FitTableProps {
   files: HfFile[];
   selectedIndex: number;
+  firstIndex?: number;
 }
 
 function fitLabel(status: FitStatus): string {
@@ -17,11 +19,6 @@ function fitLabel(status: FitStatus): string {
   }
 }
 
-function truncate(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen - 3) + '...';
-}
-
 function extractQuant(fileName: string): { baseName: string; quant: string } {
   const base = fileName.replace(/\.gguf$/i, '').replace(/-\d{5}-of-\d{5}$/, '');
   const match = base.match(/[-_]((?:UD[-_])?(?:I?Q\d[-_\w]*|[BF]F?\d+\w*))$/i);
@@ -31,7 +28,7 @@ function extractQuant(fileName: string): { baseName: string; quant: string } {
   return { baseName: base, quant: '' };
 }
 
-export function FitTable({ files, selectedIndex }: FitTableProps) {
+export function FitTable({ files, selectedIndex, firstIndex = 0 }: FitTableProps) {
   return (
     <Box flexDirection="column">
       <Box marginBottom={0}>
@@ -45,7 +42,8 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
         <Text dimColor>{'─'.repeat(70)}</Text>
       </Box>
       {files.map((file, i) => {
-        const isSelected = i === selectedIndex;
+        const rowIndex = firstIndex + i;
+        const isSelected = rowIndex === selectedIndex;
         const fileName = file.path.split('/').pop() || file.path;
         const { baseName, quant } = extractQuant(fileName);
         const quantLabel = file.metadata?.primaryQuantType || quant;
@@ -54,17 +52,17 @@ export function FitTable({ files, selectedIndex }: FitTableProps) {
           <Box key={file.path}>
             <Box width={4}>
               <Text color={isSelected ? theme.marker : undefined}>
-                {isSelected ? '›' : ' '}{String(i + 1).padStart(2)}
+                {isSelected ? '›' : ' '}{String(rowIndex + 1).padStart(2)}
               </Text>
             </Box>
             <Box width={30}>
               <Text color={isSelected ? 'white' : undefined} bold={isSelected}>
-                {truncate(baseName, 28)}
+                {truncateText(baseName, 28)}
               </Text>
             </Box>
             <Box width={16}>
               <Text color={isSelected ? 'white' : undefined} bold={isSelected}>
-                {quantLabel}
+                {truncateText(quantLabel, 14)}
               </Text>
             </Box>
             <Box width={10}>

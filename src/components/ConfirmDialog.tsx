@@ -1,6 +1,8 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
 import { theme } from '../theme.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
+import { clampLines, truncateText } from '../utils/terminal.js';
 
 interface ConfirmDialogProps {
   title: string;
@@ -10,6 +12,10 @@ interface ConfirmDialogProps {
 }
 
 export function ConfirmDialog({ title, lines, onConfirm, onCancel }: ConfirmDialogProps) {
+  const { rows, columns } = useTerminalViewport();
+  const maxLineWidth = Math.max(20, columns - 6);
+  const visibleLines = clampLines(lines.join('\n'), Math.max(1, rows - 12), maxLineWidth);
+
   useInput((input, key) => {
     if (input === 'y' || input === 'Y' || input === 'н' || input === 'Н') {
       onConfirm();
@@ -20,10 +26,10 @@ export function ConfirmDialog({ title, lines, onConfirm, onCancel }: ConfirmDial
 
   return (
     <Box flexDirection="column" marginLeft={2} marginTop={1}>
-      <Text bold color={theme.danger}>{title}</Text>
+      <Text bold color={theme.danger}>{truncateText(title, maxLineWidth)}</Text>
       <Box flexDirection="column" marginTop={1}>
-        {lines.map((line, i) => (
-          <Text key={i} dimColor={i > 0}>{line}</Text>
+        {visibleLines.map((line, i) => (
+          <Text key={`${i}-${line}`} dimColor={i > 0}>{line || ' '}</Text>
         ))}
       </Box>
       <Box marginTop={1} columnGap={2}>

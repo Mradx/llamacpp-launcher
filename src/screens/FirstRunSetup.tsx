@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { InstallWizard } from './InstallWizard.js';
 import { validateLlamaCppDir, loadStoredConfig, saveUserConfig } from '../config.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
+import { clampLines, truncateText } from '../utils/terminal.js';
 import type { StoredConfig } from '../types.js';
 import { theme } from '../theme.js';
 
@@ -25,14 +27,21 @@ const HOST_OPTIONS = [
 ];
 
 export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
+  const { rows, columns } = useTerminalViewport();
   const [step, setStep] = useState<Step>('path-choice');
   const [choiceIndex, setChoiceIndex] = useState(0);
   const [llamaCppDir, setLlamaCppDir] = useState('');
   const [pathError, setPathError] = useState('');
   const [hostIndex, setHostIndex] = useState(1);
-  const [defaultPort] = useState(() => String(loadStoredConfig().port));
+  const [defaultPort, setDefaultPort] = useState('8484');
   const [portValue, setPortValue] = useState('');
   const [portError, setPortError] = useState('');
+  const bodyHeight = Math.max(8, rows - 6);
+  const lineWidth = Math.max(24, columns - 6);
+
+  useEffect(() => {
+    setDefaultPort(String(loadStoredConfig().port));
+  }, []);
 
   const handlePathSubmit = (value: string) => {
     const trimmed = value.trim();
@@ -91,12 +100,24 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
     }
   });
 
+  if (step === 'install') {
+    return (
+      <InstallWizard
+        onDone={(dir) => {
+          setLlamaCppDir(dir);
+          setStep('host');
+        }}
+        onBack={() => setStep('path-choice')}
+      />
+    );
+  }
+
   return (
     <Box flexDirection="column">
       <Header title="FIRST-RUN SETUP" subtitle="Configure llama.cpp launcher" />
 
       {step === 'path-choice' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.accent} bold>Step 1 of 4</Text>
           <Box marginTop={1}>
             <Text>Do you have llama.cpp compiled?</Text>
@@ -121,24 +142,14 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
         </Box>
       )}
 
-      {step === 'install' && (
-        <InstallWizard
-          onDone={(dir) => {
-            setLlamaCppDir(dir);
-            setStep('host');
-          }}
-          onBack={() => setStep('path-choice')}
-        />
-      )}
-
       {step === 'path' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.accent} bold>Step 2 of 4</Text>
           <Box marginTop={1}>
             <Text>Path to your llama.cpp directory:</Text>
           </Box>
           <Box marginTop={0}>
-            <Text dimColor>  Example: C:\Users\Arthur\ai\llama.cpp</Text>
+            <Text dimColor>{truncateText('  Example: C:\\Users\\Arthur\\ai\\llama.cpp', lineWidth)}</Text>
           </Box>
           <Box marginTop={1}>
             <Text color={theme.accent}>{' › '}</Text>
@@ -151,7 +162,7 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
           </Box>
           {pathError && (
             <Box marginTop={1} flexDirection="column">
-              {pathError.split('\n').map((line, i) => (
+              {clampLines(pathError, 3, lineWidth).map((line, i) => (
                 <Text key={i} color={theme.danger}> {line}</Text>
               ))}
             </Box>
@@ -164,7 +175,7 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
       )}
 
       {step === 'host' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.accent} bold>Step 3 of 4</Text>
           <Box marginTop={1}>
             <Text>Server access mode:</Text>
@@ -191,7 +202,7 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
       )}
 
       {step === 'port' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.accent} bold>Step 4 of 4</Text>
           <Box marginTop={1}>
             <Text>Server port:</Text>
@@ -210,7 +221,7 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
           </Box>
           {portError && (
             <Box marginTop={1}>
-              <Text color={theme.danger}> {portError}</Text>
+              <Text color={theme.danger}> {truncateText(portError, lineWidth)}</Text>
             </Box>
           )}
           <KeyHint hints={[{ key: '⏎', label: 'save & continue' }, { key: 'esc', label: 'back' }]} />

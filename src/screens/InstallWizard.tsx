@@ -6,6 +6,8 @@ import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { useInstaller } from '../hooks/useInstaller.js';
 import { getCriticalMissing, getOptionalMissing, canAutoInstall, NODE_WEB_UI_REQUIREMENT, type PrerequisiteStatus, type InstallPhase } from '../services/installer.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
+import { clampLines, truncateText } from '../utils/terminal.js';
 import { theme } from '../theme.js';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -43,6 +45,7 @@ function isInput(input: string, ...keys: string[]): boolean {
 }
 
 export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
+  const { rows, columns } = useTerminalViewport();
   const {
     prereqs, checking, installing, progress,
     error, completed, startInstall, installPrereq, installAllMissing, redetect,
@@ -58,6 +61,8 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
   const optionalMissing = prereqs ? getOptionalMissing(prereqs) : [];
   const allMissing = [...criticalMissing, ...optionalMissing];
   const canProceed = prereqs && !checking && criticalMissing.length === 0;
+  const bodyHeight = Math.max(8, rows - 6);
+  const lineWidth = Math.max(24, columns - 6);
 
   useInput((input, key) => {
     if (step === 'prereq-check' && !autoInstalling) {
@@ -151,7 +156,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
       <Header title="INSTALL LLAMA.CPP" subtitle="Automated build setup" />
 
       {step === 'prereq-check' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.accent} bold>Prerequisites Check</Text>
           <Box marginTop={1} flexDirection="column">
             {checking ? (
@@ -218,16 +223,16 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
                     </Box>
                     {progress?.message && (
                       <Box marginLeft={3}>
-                        <Text dimColor>{progress.message}</Text>
+                        <Text dimColor>{truncateText(progress.message, lineWidth - 4)}</Text>
                       </Box>
                     )}
                     {progress?.stalled ? (
                       <Box marginLeft={3}>
-                        <Text color={theme.warning}>{'⚠ '}{progress.detail}</Text>
+                        <Text color={theme.warning}>{truncateText(`! ${progress.detail}`, lineWidth - 4)}</Text>
                       </Box>
                     ) : progress?.detail ? (
                       <Box marginLeft={3}>
-                        <Text dimColor wrap="truncate">{'> '}{progress.detail.slice(0, 70)}</Text>
+                        <Text dimColor wrap="truncate">{truncateText(`> ${progress.detail}`, lineWidth - 4)}</Text>
                       </Box>
                     ) : null}
                   </Box>
@@ -235,7 +240,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
 
                 {autoInstallError && !autoInstalling && (
                   <Box marginTop={1} flexDirection="column">
-                    {autoInstallError.split('\n').map((line, i) => (
+                    {clampLines(autoInstallError, 4, lineWidth).map((line, i) => (
                       <Text key={i} color={theme.danger}> {line}</Text>
                     ))}
                   </Box>
@@ -244,7 +249,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
                 {criticalMissing.length > 0 && !autoInstalling && (
                   <Box marginTop={1} flexDirection="column">
                     <Text color={theme.danger}>
-                      Missing: {criticalMissing.join(', ')}
+                      {truncateText(`Missing: ${criticalMissing.join(', ')}`, lineWidth)}
                     </Text>
                     <Text dimColor>{'  Install the missing tools and press [R] to re-check'}</Text>
                     {criticalMissing.some(m => canAutoInstall(m)) && (
@@ -266,7 +271,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
       )}
 
       {step === 'select-dir' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.accent} bold>Installation Directory</Text>
           <Box marginTop={1}>
             <Text>Where to clone & build llama.cpp:</Text>
@@ -285,7 +290,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
           </Box>
           {dirError && (
             <Box marginTop={1} flexDirection="column">
-              {dirError.split('\n').map((line, i) => (
+              {clampLines(dirError, 3, lineWidth).map((line, i) => (
                 <Text key={i} color={theme.danger}> {line}</Text>
               ))}
             </Box>
@@ -298,7 +303,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
       )}
 
       {step === 'confirm' && prereqs && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.accent} bold>Confirm Installation</Text>
           <Box marginTop={1} flexDirection="column">
             <ConfirmRow label="Directory" value={targetDir} />
@@ -326,7 +331,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
       )}
 
       {step === 'installing' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.accent} bold>Installing...</Text>
           <Box marginTop={1} flexDirection="column">
             {PHASES.map((phase, i) => {
@@ -359,7 +364,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
           {progress?.detail && (
             <Box marginTop={1} marginLeft={3}>
               <Text dimColor wrap="truncate">
-                {'> '}{progress.detail.slice(0, 80)}
+                {truncateText(`> ${progress.detail}`, lineWidth - 6)}
               </Text>
             </Box>
           )}
@@ -367,20 +372,20 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
       )}
 
       {step === 'complete' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.success} bold>Installation Complete!</Text>
           <Box marginTop={1}>
             <Text>llama-server.exe built successfully at:</Text>
           </Box>
           <Box>
-            <Text color={theme.accent}> {targetDir}\build\bin\Release</Text>
+            <Text color={theme.accent}> {truncateText(`${targetDir}\\build\\bin\\Release`, lineWidth)}</Text>
           </Box>
           <KeyHint hints={[{ key: '⏎', label: 'continue setup' }]} />
         </Box>
       )}
 
       {step === 'failed' && (
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.danger} bold>Build Failed</Text>
           {progress && (
             <Box marginTop={1}>
@@ -389,7 +394,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
           )}
           {error && (
             <Box marginTop={1} flexDirection="column">
-              {error.split('\n').slice(0, 15).map((line, i) => (
+              {clampLines(error, Math.max(3, bodyHeight - 5), lineWidth).map((line, i) => (
                 <Text key={i} color={theme.danger}> {line}</Text>
               ))}
             </Box>
@@ -413,6 +418,8 @@ function PrereqLine({ label, found, detail, hint, optional }: {
   hint?: string;
   optional?: boolean;
 }) {
+  const { columns } = useTerminalViewport();
+  const maxLineWidth = Math.max(16, columns - 24);
   const color = found ? theme.success : (optional ? theme.warning : theme.danger);
   const icon = found ? '✔' : (optional ? '⚠' : '✖');
   return (
@@ -422,11 +429,11 @@ function PrereqLine({ label, found, detail, hint, optional }: {
         <Box width={18}>
           <Text color={found ? undefined : color}>{label}</Text>
         </Box>
-        {detail && <Text dimColor>{detail}</Text>}
+        {detail && <Text dimColor>{truncateText(detail, maxLineWidth)}</Text>}
       </Box>
       {!found && hint && (
         <Box marginLeft={5}>
-          <Text dimColor>{hint}</Text>
+          <Text dimColor>{truncateText(hint, Math.max(16, columns - 10))}</Text>
         </Box>
       )}
     </Box>
@@ -434,12 +441,13 @@ function PrereqLine({ label, found, detail, hint, optional }: {
 }
 
 function ConfirmRow({ label, value }: { label: string; value: string }) {
+  const { columns } = useTerminalViewport();
   return (
     <Box>
       <Box width={14}>
         <Text color={theme.accent}> {label}</Text>
       </Box>
-      <Text>{value}</Text>
+      <Text>{truncateText(value, Math.max(12, columns - 18))}</Text>
     </Box>
   );
 }

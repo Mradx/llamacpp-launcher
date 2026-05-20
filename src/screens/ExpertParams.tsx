@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { parseRawArgs, findUnknownArgs } from '../services/known-params.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
+import { clampLines, truncateText } from '../utils/terminal.js';
 import { theme } from '../theme.js';
 
 interface ExpertParamsProps {
@@ -35,23 +37,46 @@ function getCursorOffsetForLine(lines: string[], lineIndex: number, column: numb
   return offset + Math.min(column, lines[lineIndex]?.length ?? 0);
 }
 
-function renderInputLine(line: string, cursorColumn: number | null, placeholder?: string) {
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function renderInputLine(line: string, cursorColumn: number | null, maxWidth: number, placeholder?: string) {
+  const width = Math.max(1, maxWidth);
+
   if (cursorColumn === null) {
-    return <Text>{line || ' '}</Text>;
+    return <Text>{truncateText(line || ' ', width)}</Text>;
   }
 
   if (line.length === 0 && placeholder) {
     return (
       <Text>
         <Text inverse>{placeholder[0] ?? ' '}</Text>
-        <Text dimColor>{placeholder.slice(1)}</Text>
+        <Text dimColor>{truncateText(placeholder.slice(1), Math.max(1, width - 1))}</Text>
       </Text>
     );
   }
 
-  const before = line.slice(0, cursorColumn);
-  const cursorChar = line[cursorColumn] ?? ' ';
-  const after = line.slice(cursorColumn + (line[cursorColumn] ? 1 : 0));
+  if (cursorColumn >= line.length) {
+    const beforeWidth = Math.max(0, width - 1);
+    const start = Math.max(0, line.length - beforeWidth);
+    const before = line.slice(start);
+    return (
+      <Text>
+        {before}
+        <Text inverse> </Text>
+      </Text>
+    );
+  }
+
+  const start = line.length <= width
+    ? 0
+    : clamp(cursorColumn - width + 1, 0, Math.max(0, line.length - width));
+  const visible = line.slice(start, start + width);
+  const visibleCursor = cursorColumn - start;
+  const before = visible.slice(0, visibleCursor);
+  const cursorChar = visible[visibleCursor] ?? ' ';
+  const after = visible.slice(visibleCursor + 1);
 
   return (
     <Text>
@@ -63,27 +88,42 @@ function renderInputLine(line: string, cursorColumn: number | null, placeholder?
 }
 
 interface MultilineArgsInputProps {
-  value: string;
-  cursorOffset: number;
+  lines: string[];
+  cursorLineIndex: number;
+  cursorColumn: number;
   placeholder: string;
+  scrollOffset: number;
+  viewportHeight: number;
+  lineWidth: number;
 }
 
-function MultilineArgsInput({ value, cursorOffset, placeholder }: MultilineArgsInputProps) {
-  const lines = value.split('\n');
-  const { lineIndex: cursorLineIndex, column } = getCursorLine(lines, cursorOffset);
+function MultilineArgsInput({
+  lines,
+  cursorLineIndex,
+  cursorColumn,
+  placeholder,
+  scrollOffset,
+  viewportHeight,
+  lineWidth,
+}: MultilineArgsInputProps) {
+  const visibleLines = lines.slice(scrollOffset, scrollOffset + viewportHeight);
 
   return (
-    <Box flexDirection="column" marginLeft={2}>
-      {lines.map((line, lineIndex) => (
-        <Box key={`${lineIndex}-${line}`}>
-          <Text color={theme.accent} bold>{lineIndex === 0 ? '> ' : '  '}</Text>
-          {renderInputLine(
-            line,
-            lineIndex === cursorLineIndex ? column : null,
-            value.length === 0 && lineIndex === 0 ? placeholder : undefined,
-          )}
-        </Box>
-      ))}
+    <Box flexDirection="column" marginLeft={2} height={viewportHeight}>
+      {visibleLines.map((line, offset) => {
+        const lineIndex = scrollOffset + offset;
+        return (
+          <Box key={`${lineIndex}-${line}`}>
+            <Text color={theme.accent} bold>{lineIndex === 0 ? '> ' : '  '}</Text>
+            {renderInputLine(
+              line,
+              lineIndex === cursorLineIndex ? cursorColumn : null,
+              lineWidth,
+              lines.length === 1 && lines[0].length === 0 && lineIndex === 0 ? placeholder : undefined,
+            )}
+          </Box>
+        );
+      })}
     </Box>
   );
 }
@@ -91,9 +131,28 @@ function MultilineArgsInput({ value, cursorOffset, placeholder }: MultilineArgsI
 export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
   const [input, setInput] = useState('');
   const [cursorOffset, setCursorOffset] = useState(0);
+  const [inputScroll, setInputScroll] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
   const [unknownArgs, setUnknownArgs] = useState<string[]>([]);
   const [parsedArgs, setParsedArgs] = useState<string[]>([]);
+  const { rows, columns } = useTerminalViewport();
+  const inputViewportHeight = Math.max(3, rows - 13);
+  const lineWidth = Math.max(12, columns - 6);
+  const inputLines = input.split('\n');
+  const { lineIndex: cursorLineIndex, column } = getCursorLine(inputLines, cursorOffset);
+  const maxInputScroll = Math.max(0, inputLines.length - inputViewportHeight);
+
+  useEffect(() => {
+    setInputScroll(prev => {
+      let next = clamp(prev, 0, maxInputScroll);
+      if (cursorLineIndex < next) {
+        next = cursorLineIndex;
+      } else if (cursorLineIndex >= next + inputViewportHeight) {
+        next = cursorLineIndex - inputViewportHeight + 1;
+      }
+      return clamp(next, 0, maxInputScroll);
+    });
+  }, [cursorLineIndex, inputViewportHeight, maxInputScroll]);
 
   useInput((inputChar, key) => {
     if (showConfirm) {
@@ -184,21 +243,26 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
     }
   };
 
+  const unknownLines = clampLines(unknownArgs.join('\n'), Math.max(1, rows - 14), lineWidth - 8);
+
   return (
     <Box flexDirection="column">
       <Header title="EXPERT PARAMETERS" subtitle="Enter raw llama-server sampling flags" />
 
       <Box flexDirection="column" marginLeft={2} marginBottom={1}>
-        <Text dimColor>Examples:</Text>
-        <Text dimColor>  --temp 0.8 --top-p 0.95 --top-k 40 --min-p 0.05</Text>
-        <Text dimColor>  --presence-penalty 1.5 --frequency-penalty 0.5 --repeat-penalty 1.1</Text>
+        <Text dimColor>{truncateText('Examples: --temp 0.8 --top-p 0.95 --top-k 40 --min-p 0.05', lineWidth)}</Text>
+        <Text dimColor>{truncateText('          --presence-penalty 1.5 --frequency-penalty 0.5 --repeat-penalty 1.1', lineWidth)}</Text>
         <Text dimColor>  (empty = no sampling params)</Text>
       </Box>
 
       {!showConfirm && (
         <MultilineArgsInput
-          value={input}
-          cursorOffset={cursorOffset}
+          lines={inputLines}
+          cursorLineIndex={cursorLineIndex}
+          cursorColumn={column}
+          scrollOffset={inputScroll}
+          viewportHeight={inputViewportHeight}
+          lineWidth={lineWidth}
           placeholder="--temp 0.8 --top-k 40 ..."
         />
       )}
@@ -214,8 +278,8 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
           >
             <Text color={theme.warning} bold> Unknown parameters detected:</Text>
             <Text> </Text>
-            {unknownArgs.map(arg => (
-              <Text key={arg} color={theme.warning}>  • {arg}</Text>
+            {unknownLines.map((arg, i) => (
+              <Text key={`${i}-${arg}`} color={theme.warning}>  - {arg}</Text>
             ))}
             <Text> </Text>
             <Text dimColor>  These are not in the llama-server sampling docs.</Text>
@@ -228,6 +292,11 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
 
       {!showConfirm && (
         <Box marginLeft={2}>
+          <Text dimColor>
+            Line {cursorLineIndex + 1}:{column + 1}  -  {inputLines.length} lines
+            {maxInputScroll > 0 && inputScroll < maxInputScroll ? '  v' : ''}
+            {inputScroll > 0 ? '  ^' : ''}
+          </Text>
           <KeyHint hints={[
             { key: '⏎', label: 'submit' },
             { key: 'ctrl+j', label: 'new line' },

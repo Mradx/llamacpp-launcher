@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { formatNumber } from '../utils/format.js';
+import { truncateText } from '../utils/terminal.js';
 import { calculateFit } from '../services/memory.js';
+import { useScrollableViewport } from '../hooks/useScrollableViewport.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import type { FitStatus, HardwareInfo, ModelMetadata } from '../types.js';
 import { fitStatusColor, theme } from '../theme.js';
 
@@ -36,14 +39,28 @@ function fitLabel(status: FitStatus): string {
 export function ContextSelect({ options, modelSizeBytes, metadata, hardware, onSelect, onBack }: ContextSelectProps) {
   const suggestedIdx = Math.floor(options.length / 2);
   const [selectedIndex, setSelectedIndex] = useState(suggestedIdx);
+  const { columns } = useTerminalViewport();
+  const listViewport = useScrollableViewport({
+    itemCount: options.length,
+    selectedIndex,
+    reservedRows: 8,
+    minRows: 4,
+  });
+  const visibleOptions = options.slice(listViewport.start, listViewport.end);
+  const descWidth = Math.max(12, Math.min(18, columns - 42));
 
   const canShowFit = !!(modelSizeBytes && hardware);
+
+  useEffect(() => {
+    setSelectedIndex(i => Math.min(i, Math.max(0, options.length - 1)));
+  }, [options.length]);
 
   useInput((input, key) => {
     if (key.escape) {
       onBack();
       return;
     }
+    if (options.length === 0) return;
     if (key.upArrow) {
       setSelectedIndex(i => Math.max(0, i - 1));
     } else if (key.downArrow) {
@@ -58,7 +75,9 @@ export function ContextSelect({ options, modelSizeBytes, metadata, hardware, onS
       <Header title="CONTEXT SIZE" />
 
       <Box flexDirection="column" marginLeft={2}>
-        {options.map((ctx, i) => {
+        {listViewport.hasAbove && <Text dimColor>  ... more above</Text>}
+        {visibleOptions.map((ctx, offset) => {
+          const i = listViewport.start + offset;
           const isSelected = i === selectedIndex;
           const isDefault = i === suggestedIdx;
           const desc = descriptions[ctx] || '';
@@ -84,8 +103,8 @@ export function ContextSelect({ options, modelSizeBytes, metadata, hardware, onS
                   {formatNumber(ctx).padStart(7)} tokens
                 </Text>
               </Box>
-              <Box width={18}>
-                <Text dimColor>  ({desc}){isDefault ? ' ★' : ''}</Text>
+              <Box width={descWidth + 4}>
+                <Text dimColor>  ({truncateText(desc, descWidth)}){isDefault ? ' ★' : ''}</Text>
               </Box>
               {exceedsTrainContext && (
                 <Box width={8}>
@@ -100,6 +119,7 @@ export function ContextSelect({ options, modelSizeBytes, metadata, hardware, onS
             </Box>
           );
         })}
+        {listViewport.hasBelow && <Text dimColor>  ... more below</Text>}
       </Box>
 
       <Box marginLeft={2}>

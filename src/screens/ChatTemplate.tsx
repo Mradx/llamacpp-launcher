@@ -1,7 +1,9 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
+import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
+import { truncateText } from '../utils/terminal.js';
 import { theme } from '../theme.js';
 
 interface ChatTemplateProps {
@@ -68,14 +70,36 @@ function getCursorOffsetForLine(lines: string[], lineIndex: number, column: numb
   return offset + Math.min(column, lines[lineIndex]?.length ?? 0);
 }
 
-function renderEditLine(line: string, cursorColumn: number | null) {
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function renderEditLine(line: string, cursorColumn: number | null, maxWidth: number) {
+  const width = Math.max(1, maxWidth);
+
   if (cursorColumn === null) {
-    return <Text>{line || ' '}</Text>;
+    return <Text>{truncateText(line || ' ', width)}</Text>;
   }
 
-  const before = line.slice(0, cursorColumn);
-  const cursorChar = line[cursorColumn] ?? ' ';
-  const after = line.slice(cursorColumn + (line[cursorColumn] ? 1 : 0));
+  if (cursorColumn >= line.length) {
+    const beforeWidth = Math.max(0, width - 1);
+    const before = line.slice(Math.max(0, line.length - beforeWidth));
+    return (
+      <Text>
+        {before}
+        <Text inverse> </Text>
+      </Text>
+    );
+  }
+
+  const start = line.length <= width
+    ? 0
+    : clamp(cursorColumn - width + 1, 0, Math.max(0, line.length - width));
+  const visible = line.slice(start, start + width);
+  const visibleCursor = cursorColumn - start;
+  const before = visible.slice(0, visibleCursor);
+  const cursorChar = visible[visibleCursor] ?? ' ';
+  const after = visible.slice(visibleCursor + 1);
 
   return (
     <Text>
@@ -95,10 +119,8 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
   const [editScroll, setEditScroll] = useState(0);
   const undoStack = useRef<EditorSnapshot[]>([]);
   const redoStack = useRef<EditorSnapshot[]>([]);
-
-  const { stdout } = useStdout();
-  const termHeight = stdout?.rows ?? 24;
-  const viewportHeight = Math.max(5, termHeight - 14);
+  const { rows, columns } = useTerminalViewport();
+  const viewportHeight = Math.max(5, rows - 14);
 
   const activeTemplate = override ?? embeddedTemplate;
   const templateLines = useMemo(() => (activeTemplate ?? '').split('\n'), [activeTemplate]);
@@ -106,6 +128,32 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
   const maxScroll = Math.max(0, totalLines - viewportHeight);
   const visibleLines = templateLines.slice(scrollOffset, scrollOffset + viewportHeight);
   const lineNumWidth = String(totalLines).length;
+  const viewLineWidth = Math.max(12, columns - lineNumWidth - 8);
+
+  const editLines = editInput.split('\n');
+  const editTotalLines = editLines.length;
+  const editLineNumWidth = String(editTotalLines).length;
+  const { lineIndex: cursorLineIndex, column } = getCursorLine(editLines, editCursor);
+  const editMaxScroll = Math.max(0, editTotalLines - viewportHeight);
+  const editVisibleLines = editLines.slice(editScroll, editScroll + viewportHeight);
+  const editLineWidth = Math.max(12, columns - editLineNumWidth - 8);
+
+  useEffect(() => {
+    setScrollOffset(offset => Math.min(offset, maxScroll));
+  }, [maxScroll]);
+
+  useEffect(() => {
+    if (mode !== 'edit') return;
+    setEditScroll(prev => {
+      let next = clamp(prev, 0, editMaxScroll);
+      if (cursorLineIndex < next) {
+        next = cursorLineIndex;
+      } else if (cursorLineIndex >= next + viewportHeight) {
+        next = cursorLineIndex - viewportHeight + 1;
+      }
+      return clamp(next, 0, editMaxScroll);
+    });
+  }, [cursorLineIndex, editMaxScroll, mode, viewportHeight]);
 
   const pushUndo = () => {
     undoStack.current.push({ text: editInput, cursor: editCursor });
@@ -164,11 +212,9 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
         return;
       }
 
-      // undo / redo
       if (key.ctrl && inputChar === 'z') { applyUndo(); return; }
       if (key.ctrl && inputChar === 'y') { applyRedo(); return; }
 
-      // clear all content
       if (key.ctrl && inputChar === 'k') {
         pushUndo();
         setEditInput('');
@@ -176,7 +222,6 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
         return;
       }
 
-      // reset to embedded template
       if (key.ctrl && inputChar === 'r') {
         pushUndo();
         setEditInput(embeddedTemplate ?? '');
@@ -184,7 +229,6 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
         return;
       }
 
-      // page up / page down — move cursor by viewport
       if (key.pageUp || key.pageDown) {
         const lines = editInput.split('\n');
         const cur = getCursorLine(lines, editCursor);
@@ -194,7 +238,6 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
         return;
       }
 
-      // cursor movement
       if (key.leftArrow) { setEditCursor(c => Math.max(0, c - 1)); return; }
       if (key.rightArrow) { setEditCursor(c => Math.min(editInput.length, c + 1)); return; }
 
@@ -208,7 +251,6 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
         return;
       }
 
-      // deletions
       if (key.backspace) {
         if (editCursor > 0) {
           pushUndo();
@@ -234,7 +276,6 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
         return;
       }
 
-      // typing
       const fragment = key.ctrl && inputChar === 'j' ? '\n' : normalizeInputFragment(inputChar);
       if (fragment.length > 0) {
         pushUndo();
@@ -243,8 +284,6 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
       }
       return;
     }
-
-    // ── view mode ──
 
     if (key.escape) {
       onBack();
@@ -271,39 +310,19 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
     }
   });
 
-  // ── edit mode render ──
-
   if (mode === 'edit') {
-    const editLines = editInput.split('\n');
-    const editTotalLines = editLines.length;
-    const editLineNumWidth = String(editTotalLines).length;
-    const { lineIndex: cursorLineIndex, column } = getCursorLine(editLines, editCursor);
-
-    let adjustedScroll = editScroll;
-    if (cursorLineIndex < adjustedScroll) {
-      adjustedScroll = cursorLineIndex;
-    } else if (cursorLineIndex >= adjustedScroll + viewportHeight) {
-      adjustedScroll = cursorLineIndex - viewportHeight + 1;
-    }
-    if (adjustedScroll !== editScroll) {
-      setEditScroll(adjustedScroll);
-    }
-
-    const editVisibleLines = editLines.slice(adjustedScroll, adjustedScroll + viewportHeight);
-    const editMaxScroll = Math.max(0, editTotalLines - viewportHeight);
-
     return (
       <Box flexDirection="column">
         <Header title="CHAT TEMPLATE" subtitle="Editing template" />
 
         <Box flexDirection="column" marginLeft={2} marginBottom={1}>
-          <Text dimColor>Edit the Jinja chat template below.</Text>
-          <Text dimColor>Submit empty to reset to model default.</Text>
+          <Text dimColor>{truncateText('Edit the Jinja chat template below.', Math.max(12, columns - 4))}</Text>
+          <Text dimColor>{truncateText('Submit empty to reset to model default.', Math.max(12, columns - 4))}</Text>
         </Box>
 
-        <Box flexDirection="column" marginLeft={2}>
+        <Box flexDirection="column" marginLeft={2} height={viewportHeight}>
           {editVisibleLines.map((line, i) => {
-            const lineIndex = adjustedScroll + i;
+            const lineIndex = editScroll + i;
             return (
               <Box key={`${lineIndex}-${line.slice(0, 20)}`}>
                 <Text color={theme.neutral}>
@@ -312,6 +331,7 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
                 {renderEditLine(
                   line,
                   lineIndex === cursorLineIndex ? column : null,
+                  editLineWidth,
                 )}
               </Box>
             );
@@ -320,9 +340,9 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
 
         <Box marginLeft={2}>
           <Text dimColor>
-            Line {cursorLineIndex + 1}:{column + 1}  ·  {editTotalLines} lines
-            {editMaxScroll > 0 && adjustedScroll < editMaxScroll ? '  ↓' : ''}
-            {adjustedScroll > 0 ? '  ↑' : ''}
+            Line {cursorLineIndex + 1}:{column + 1}  -  {editTotalLines} lines
+            {editMaxScroll > 0 && editScroll < editMaxScroll ? '  v' : ''}
+            {editScroll > 0 ? '  ^' : ''}
           </Text>
         </Box>
 
@@ -339,8 +359,6 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
       </Box>
     );
   }
-
-  // ── view mode render ──
 
   const hasOverride = override !== undefined;
   const hasTemplate = activeTemplate !== undefined && activeTemplate.length > 0;
@@ -365,6 +383,7 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
             borderStyle="round"
             borderColor={theme.border}
             paddingX={1}
+            height={viewportHeight + 2}
           >
             {visibleLines.map((line, i) => {
               const lineNum = scrollOffset + i + 1;
@@ -373,7 +392,7 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
                   <Text color={theme.neutral}>
                     {String(lineNum).padStart(lineNumWidth)} {'│ '}
                   </Text>
-                  <Text>{highlightJinja(line)}</Text>
+                  <Text>{highlightJinja(truncateText(line, viewLineWidth))}</Text>
                 </Box>
               );
             })}
@@ -382,8 +401,8 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
           <Box marginLeft={1}>
             <Text dimColor>
               Lines {scrollOffset + 1}-{Math.min(scrollOffset + viewportHeight, totalLines)} of {totalLines}
-              {maxScroll > 0 && scrollOffset < maxScroll ? '  ↓ more below' : ''}
-              {scrollOffset > 0 ? '  ↑ more above' : ''}
+              {maxScroll > 0 && scrollOffset < maxScroll ? '  v more below' : ''}
+              {scrollOffset > 0 ? '  ^ more above' : ''}
             </Text>
           </Box>
         </Box>
