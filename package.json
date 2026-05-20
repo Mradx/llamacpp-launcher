@@ -2,6 +2,7 @@
   "name": "llamacpp-launcher",
   "version": "1.0.0",
   "description": "Terminal UI launcher for llama.cpp server",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
