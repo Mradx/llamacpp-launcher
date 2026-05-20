@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
@@ -42,6 +42,24 @@ function metadataSummary(metadata?: ModelMetadata, fileName?: string): string {
   ].filter(Boolean).join(' · ');
 }
 
+function extractQuantLabel(fileName: string): string {
+  const base = fileName.replace(/\.gguf$/i, '').replace(/-\d{5}-of-\d{5}$/, '');
+  const match = base.match(/[-_]((?:UD[-_])?(?:I?Q\d[-_\w]*|[BF]F?\d+\w*|Q\d[-_\w]*))$/i);
+  return match?.[1]?.replace(/_/g, '-') || 'GGUF';
+}
+
+function groupLabel(model: LocalModel): string {
+  return model.metadata?.baseName || model.metadata?.name || model.repoId;
+}
+
+function countByRepo(models: LocalModel[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const model of models) {
+    counts.set(model.repoId, (counts.get(model.repoId) || 0) + 1);
+  }
+  return counts;
+}
+
 export function ModelSelect({ models, loading, hfCachePath, version, onSelect, onDelete, onRefresh, onQuit, onSettings }: ModelSelectProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showHfInput, setShowHfInput] = useState(false);
@@ -52,6 +70,7 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
   const hfIndex = models.length;
   const settingsIndex = models.length + 1;
   const totalItems = models.length + 2;
+  const repoCounts = useMemo(() => countByRepo(models), [models]);
   const listViewport = useScrollableViewport({
     itemCount: totalItems,
     selectedIndex,
@@ -64,6 +83,7 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
     (_, i) => listViewport.start + i,
   );
   const maxLineWidth = Math.max(24, columns - 12);
+  const variantLineWidth = Math.max(18, columns - 18);
 
   useEffect(() => {
     setSelectedIndex(i => Math.min(i, Math.max(0, totalItems - 1)));
@@ -130,35 +150,45 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
     cancelHfInput();
   };
 
-  const renderItem = (index: number) => {
+  const renderItem = (index: number, showGroupHeader: boolean) => {
     if (index < models.length) {
       const model = models[index];
       const isSelected = index === selectedIndex;
-      const name = model.metadata?.name || model.repoId;
       const meta = model.metadata ? metadataSummary(model.metadata, model.fileName) : undefined;
       const size = formatSize(model.sizeBytes);
+      const quant = model.metadata?.primaryQuantType || extractQuantLabel(model.fileName);
+      const variants = repoCounts.get(model.repoId) || 1;
 
       return (
         <Box key={model.path} flexDirection="column">
-          <Box>
-            <Text color={isSelected ? theme.marker : undefined}>
-              {isSelected ? ' › ' : '   '}
-            </Text>
-            <Box width={4}>
-              <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
-                {index + 1}.
-              </Text>
+          {showGroupHeader && (
+            <Box marginTop={index === listViewport.start ? 0 : 1}>
+              <Text color={theme.accentDim}>▾ </Text>
+              <Text color={theme.logoText} bold>{truncateText(groupLabel(model), maxLineWidth)}</Text>
+              <Text dimColor>  {variants} variant{variants === 1 ? '' : 's'}</Text>
             </Box>
-            <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
-              {truncateText(name, maxLineWidth)}
-            </Text>
-          </Box>
-          <Box marginLeft={8}>
-            <Text dimColor>{truncateText(model.fileName, maxLineWidth)}</Text>
-          </Box>
-          <Box marginLeft={8}>
-            <Text color={theme.accentMuted}>{size}</Text>
-            {meta && <Text dimColor>  {truncateText(meta, Math.max(12, maxLineWidth - size.length - 2))}</Text>}
+          )}
+          <Box flexDirection="column" marginLeft={2}>
+            <Box>
+              <Text color={isSelected ? theme.marker : undefined}>
+                {isSelected ? ' › ' : '   '}
+              </Text>
+              <Box width={4}>
+                <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+                  {index + 1}.
+                </Text>
+              </Box>
+              <Box width={14}>
+                <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+                  {truncateText(quant, 12)}
+                </Text>
+              </Box>
+              <Text dimColor>{truncateText(model.fileName, Math.max(12, variantLineWidth - 18))}</Text>
+            </Box>
+            <Box marginLeft={7}>
+              <Text color={theme.accentMuted}>{size}</Text>
+              {meta && <Text dimColor>  {truncateText(meta, Math.max(12, variantLineWidth - size.length - 9))}</Text>}
+            </Box>
           </Box>
         </Box>
       );
@@ -167,7 +197,7 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
     if (index === hfIndex) {
       const isSelected = selectedIndex === hfIndex;
       return (
-        <Box key="hf-input-action">
+        <Box key="hf-input-action" marginTop={models.length > 0 ? 1 : 0}>
           <Text color={isSelected ? theme.marker : undefined}>
             {isSelected ? ' › ' : '   '}
           </Text>
@@ -199,6 +229,19 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
     );
   };
 
+  const renderedItems: React.ReactNode[] = [];
+  let lastRepoId: string | null = null;
+  for (const index of visibleIndexes) {
+    if (index < models.length) {
+      const repoId = models[index].repoId;
+      renderedItems.push(renderItem(index, repoId !== lastRepoId));
+      lastRepoId = repoId;
+    } else {
+      renderedItems.push(renderItem(index, false));
+      lastRepoId = null;
+    }
+  }
+
   return (
     <Box flexDirection="column">
       <Header title="LOCAL MODELS" version={version} />
@@ -228,7 +271,7 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
               <Text dimColor>  ... more above</Text>
             )}
 
-            {visibleIndexes.map(renderItem)}
+            {renderedItems}
 
             {listViewport.hasBelow && (
               <Text dimColor>  ... more below</Text>
