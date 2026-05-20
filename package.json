@@ -1,6 +1,6 @@
 {
   "name": "llamacpp-launcher",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "Modern terminal UI launcher for llama.cpp server",
   "type": "module",
   "engines": {

@@ -405,18 +405,35 @@ export function ModelSelect({
 
     if (item.type === 'hf') {
       return (
-        <Box key="hf-input-action" marginBottom={nextItem?.type === 'settings' ? 1 : 0}>
-          <Text color={isSelected ? theme.marker : undefined}>
-            {isSelected ? ' › ' : '   '}
-          </Text>
-          <Box width={4}>
+        <Box
+          key="hf-input-action"
+          flexDirection="column"
+          marginBottom={nextItem?.type === 'settings' ? 1 : 0}
+        >
+          <Box>
+            <Text color={isSelected ? theme.marker : undefined}>
+              {isSelected ? ' › ' : '   '}
+            </Text>
+            <Box width={4}>
+              <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+                {num}.
+              </Text>
+            </Box>
             <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
-              {num}.
+              Enter Hugging Face repo or URL...
             </Text>
           </Box>
-          <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
-            Enter Hugging Face repo or URL...
-          </Text>
+          {showHfInput && (
+            <Box marginLeft={8}>
+              <Text color={theme.accent}>{'> '}</Text>
+              <TextInput
+                value={hfInput}
+                onChange={setHfInput}
+                onSubmit={handleHfSubmit}
+                placeholder="user/repo or https://huggingface.co/..."
+              />
+            </Box>
+          )}
         </Box>
       );
     }
@@ -471,17 +488,6 @@ export function ModelSelect({
               <Text dimColor>  ... more below</Text>
             )}
 
-            {showHfInput && (
-              <Box marginTop={1} marginLeft={8}>
-                <Text color={theme.accent}>{'> '}</Text>
-                <TextInput
-                  value={hfInput}
-                  onChange={setHfInput}
-                  onSubmit={handleHfSubmit}
-                  placeholder="user/repo or https://huggingface.co/..."
-                />
-              </Box>
-            )}
           </Box>
         </Box>
       )}
