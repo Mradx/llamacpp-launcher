@@ -26,6 +26,8 @@ interface ParamsSelectProps {
   onExpertDirect: (rawArgs: string[]) => void;
   onTemplate: () => void;
   onBack: () => void;
+  initialSelectedIndex?: number;
+  onSelectedIndexChange?: (selectedIndex: number) => void;
 }
 
 function formatParamsRaw(params: ModelParams): string {
@@ -40,14 +42,23 @@ function formatParamsRaw(params: ModelParams): string {
   return parts.join(' ');
 }
 
-export function ParamsSelect({ presetName, profiles, hasTemplate, hasTemplateOverride, onSelect, onCustom, onExpert, onExpertDirect, onTemplate, onBack }: ParamsSelectProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+export function ParamsSelect({
+  presetName,
+  profiles,
+  hasTemplate,
+  hasTemplateOverride,
+  onSelect,
+  onCustom,
+  onExpert,
+  onExpertDirect,
+  onTemplate,
+  onBack,
+  initialSelectedIndex,
+  onSelectedIndexChange,
+}: ParamsSelectProps) {
+  const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
+  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
   const { columns } = useTerminalViewport();
-
-  useEffect(() => {
-    setHistory(loadHistory());
-  }, []);
 
   const recentStart = profiles.length;
 
@@ -90,6 +101,10 @@ export function ParamsSelect({ presetName, profiles, hasTemplate, hasTemplateOve
   useEffect(() => {
     setSelectedIndex(i => Math.min(i, Math.max(0, items.length - 1)));
   }, [items.length]);
+
+  useEffect(() => {
+    onSelectedIndexChange?.(selectedIndex);
+  }, [onSelectedIndexChange, selectedIndex]);
 
   useInput((input, key) => {
     if (key.escape) {

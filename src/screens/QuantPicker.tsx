@@ -20,6 +20,8 @@ interface QuantPickerProps {
   selecting?: boolean;
   onSelect: (file: HfFile) => void;
   onBack: () => void;
+  initialSelectedIndex?: number;
+  onSelectedIndexChange?: (selectedIndex: number) => void;
 }
 
 function fileNameFromPath(path: string): string {
@@ -61,11 +63,21 @@ function downloadedQuantSummary(files: HfFile[]): string {
     .join(', ');
 }
 
-export function QuantPicker({ repo, contextTokens, hardware, localModels, selecting, onSelect, onBack }: QuantPickerProps) {
+export function QuantPicker({
+  repo,
+  contextTokens,
+  hardware,
+  localModels,
+  selecting,
+  onSelect,
+  onBack,
+  initialSelectedIndex,
+  onSelectedIndexChange,
+}: QuantPickerProps) {
   const [files, setFiles] = useState<HfFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const { columns } = useTerminalViewport();
   const downloadedFileNames = useMemo(
     () => getDownloadedFileNames(repo, localModels),
@@ -95,8 +107,9 @@ export function QuantPicker({ repo, contextTokens, hardware, localModels, select
           hardware?.ramMb || 0
         );
         if (!cancelled) {
-          setFiles(markDownloaded(result, downloadedFileNames));
-          setSelectedIndex(0);
+          const nextFiles = markDownloaded(result, downloadedFileNames);
+          setFiles(nextFiles);
+          setSelectedIndex(Math.min(initialSelectedIndex ?? 0, Math.max(0, nextFiles.length - 1)));
           setLoading(false);
         }
       } catch (e) {
@@ -114,6 +127,10 @@ export function QuantPicker({ repo, contextTokens, hardware, localModels, select
   useEffect(() => {
     setSelectedIndex(i => Math.min(i, Math.max(0, files.length - 1)));
   }, [files.length]);
+
+  useEffect(() => {
+    onSelectedIndexChange?.(selectedIndex);
+  }, [onSelectedIndexChange, selectedIndex]);
 
   useInput((input, key) => {
     if (key.escape) {

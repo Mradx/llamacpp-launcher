@@ -25,6 +25,8 @@ interface ModelSelectProps {
   onRefresh: () => void;
   onQuit: () => void;
   onSettings: () => void;
+  initialSelectedIndex?: number;
+  onSelectedIndexChange?: (selectedIndex: number) => void;
 }
 
 function metadataSummary(metadata?: ModelMetadata, fileName?: string): string {
@@ -60,8 +62,19 @@ function countByRepo(models: LocalModel[]): Map<string, number> {
   return counts;
 }
 
-export function ModelSelect({ models, loading, hfCachePath, version, onSelect, onDelete, onRefresh, onQuit, onSettings }: ModelSelectProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+export function ModelSelect({
+  models,
+  loading,
+  hfCachePath,
+  version,
+  onSelect,
+  onDelete,
+  onRefresh,
+  onQuit,
+  onSettings,
+  initialSelectedIndex,
+  onSelectedIndexChange,
+}: ModelSelectProps) {
   const [showHfInput, setShowHfInput] = useState(false);
   const [hfInput, setHfInput] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<LocalModel | null>(null);
@@ -70,6 +83,9 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
   const hfIndex = models.length;
   const settingsIndex = models.length + 1;
   const totalItems = models.length + 2;
+  const [selectedIndex, setSelectedIndex] = useState(() => (
+    Math.min(initialSelectedIndex ?? 0, Math.max(0, totalItems - 1))
+  ));
   const repoCounts = useMemo(() => countByRepo(models), [models]);
   const listViewport = useScrollableViewport({
     itemCount: totalItems,
@@ -88,6 +104,10 @@ export function ModelSelect({ models, loading, hfCachePath, version, onSelect, o
   useEffect(() => {
     setSelectedIndex(i => Math.min(i, Math.max(0, totalItems - 1)));
   }, [totalItems]);
+
+  useEffect(() => {
+    onSelectedIndexChange?.(selectedIndex);
+  }, [onSelectedIndexChange, selectedIndex]);
 
   const cancelHfInput = () => {
     setShowHfInput(false);

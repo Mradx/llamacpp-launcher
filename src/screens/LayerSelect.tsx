@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
@@ -22,6 +22,8 @@ interface LayerSelectProps {
   ramMb: number;
   onSelect: (gpuLayers: number) => void;
   onBack: () => void;
+  initialSelectedIndex?: number;
+  onSelectedIndexChange?: (selectedIndex: number) => void;
 }
 
 function generatePresets(
@@ -122,14 +124,35 @@ function buildLayerSubtitle(
   return parts.join(' │ ');
 }
 
-export function LayerSelect({ totalLayers, modelSizeMb, kvCacheMb, kvCacheEstimated, metadata, vramMb, ramMb, onSelect, onBack }: LayerSelectProps) {
-  const [mode, setMode] = useState<'presets' | 'custom'>('presets');
-  const [selectedIndex, setSelectedIndex] = useState(0);
+export function LayerSelect({
+  totalLayers,
+  modelSizeMb,
+  kvCacheMb,
+  kvCacheEstimated,
+  metadata,
+  vramMb,
+  ramMb,
+  onSelect,
+  onBack,
+  initialSelectedIndex,
+  onSelectedIndexChange,
+}: LayerSelectProps) {
   const maxGpu = calculateMaxGpuLayers(totalLayers, modelSizeMb, kvCacheMb, vramMb);
-  const [customLayers, setCustomLayers] = useState(maxGpu);
-
   const presets = generatePresets(totalLayers, modelSizeMb, kvCacheMb, vramMb);
   const itemCount = presets.length + 1;
+  const [mode, setMode] = useState<'presets' | 'custom'>('presets');
+  const [selectedIndex, setSelectedIndex] = useState(() => (
+    Math.min(initialSelectedIndex ?? 0, Math.max(0, itemCount - 1))
+  ));
+  const [customLayers, setCustomLayers] = useState(maxGpu);
+
+  useEffect(() => {
+    setSelectedIndex(i => Math.min(i, Math.max(0, itemCount - 1)));
+  }, [itemCount]);
+
+  useEffect(() => {
+    onSelectedIndexChange?.(selectedIndex);
+  }, [onSelectedIndexChange, selectedIndex]);
 
   useInput((input, key) => {
     if (mode === 'presets') {

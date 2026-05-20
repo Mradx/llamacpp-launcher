@@ -60,6 +60,12 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [gpuLayers, setGpuLayers] = useState(99);
   const [didShowLayerSelect, setDidShowLayerSelect] = useState(false);
   const [chatTemplateOverride, setChatTemplateOverride] = useState<string | undefined>(undefined);
+  const [modelSelectIndex, setModelSelectIndex] = useState(0);
+  const [contextSelectIndex, setContextSelectIndex] = useState<number | undefined>();
+  const [quantPickerIndex, setQuantPickerIndex] = useState<number | undefined>();
+  const [layerSelectIndex, setLayerSelectIndex] = useState<number | undefined>();
+  const [paramsSelectIndex, setParamsSelectIndex] = useState<number | undefined>();
+  const [customParamsIndex, setCustomParamsIndex] = useState<number | undefined>();
 
   const handleModelSelect = async (model: ModelSelection) => {
     setModelMetadata(model.metadata);
@@ -87,6 +93,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     }
     setChatTemplateOverride(loadTemplateOverride(model));
     setSelectedModel(model);
+    setContextSelectIndex(undefined);
     setScreen('context-select');
   };
 
@@ -94,6 +101,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     setContextSize(ctx);
     if (selectedModel?.mode === 'hf' && !selectedModel.file) {
       setQuantLoading(false);
+      setQuantPickerIndex(undefined);
       setScreen('quant-picker');
     } else {
       goToLayersOrParams(ctx);
@@ -129,16 +137,19 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     const size = sizeOverride ?? modelSizeBytes;
     if (size && hardware && hardware.vramMb > 0) {
       setDidShowLayerSelect(true);
+      setLayerSelectIndex(undefined);
       setScreen('layer-select');
       return;
     }
     setDidShowLayerSelect(false);
     setGpuLayers(99);
+    setParamsSelectIndex(undefined);
     setScreen('params-select');
   };
 
   const handleLayerSelect = (layers: number) => {
     setGpuLayers(layers);
+    setParamsSelectIndex(undefined);
     setScreen('params-select');
   };
 
@@ -272,6 +283,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           onRefresh={refreshModels}
           onQuit={handleQuit}
           onSettings={handleSettings}
+          initialSelectedIndex={modelSelectIndex}
+          onSelectedIndexChange={setModelSelectIndex}
         />
       )}
 
@@ -283,6 +296,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           hardware={hardware}
           onSelect={handleContextSelect}
           onBack={() => setScreen('model-select')}
+          initialSelectedIndex={contextSelectIndex}
+          onSelectedIndexChange={setContextSelectIndex}
         />
       )}
 
@@ -295,6 +310,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           selecting={quantLoading}
           onSelect={handleQuantSelect}
           onBack={handleQuantBack}
+          initialSelectedIndex={quantPickerIndex}
+          onSelectedIndexChange={setQuantPickerIndex}
         />
       )}
 
@@ -309,6 +326,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           ramMb={hardware.ramMb}
           onSelect={handleLayerSelect}
           onBack={goBackFromLayers}
+          initialSelectedIndex={layerSelectIndex}
+          onSelectedIndexChange={setLayerSelectIndex}
         />
       )}
 
@@ -319,11 +338,16 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           hasTemplate={!!effectiveMetadata?.chatTemplate}
           hasTemplateOverride={chatTemplateOverride !== undefined}
           onSelect={handleParamsSelect}
-          onCustom={() => setScreen('custom-params')}
+          onCustom={() => {
+            setCustomParamsIndex(undefined);
+            setScreen('custom-params');
+          }}
           onExpert={() => setScreen('expert-params')}
           onExpertDirect={handleExpertDirect}
           onTemplate={() => setScreen('chat-template')}
           onBack={goBackFromParams}
+          initialSelectedIndex={paramsSelectIndex}
+          onSelectedIndexChange={setParamsSelectIndex}
         />
       )}
 
@@ -331,6 +355,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         <CustomParams
           onConfirm={handleCustomConfirm}
           onBack={() => setScreen('params-select')}
+          initialSelectedIndex={customParamsIndex}
+          onSelectedIndexChange={setCustomParamsIndex}
         />
       )}
 

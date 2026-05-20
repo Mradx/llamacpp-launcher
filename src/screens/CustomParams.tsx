@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
@@ -27,13 +27,26 @@ const FIELDS: ParamField[] = [
 interface CustomParamsProps {
   onConfirm: (params: ModelParams) => void;
   onBack: () => void;
+  initialSelectedIndex?: number;
+  onSelectedIndexChange?: (selectedIndex: number) => void;
 }
 
-export function CustomParams({ onConfirm, onBack }: CustomParamsProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+export function CustomParams({
+  onConfirm,
+  onBack,
+  initialSelectedIndex,
+  onSelectedIndexChange,
+}: CustomParamsProps) {
+  const [selectedIndex, setSelectedIndex] = useState(() => (
+    Math.min(initialSelectedIndex ?? 0, FIELDS.length)
+  ));
   const [values, setValues] = useState<Record<string, number>>(
     Object.fromEntries(FIELDS.map(f => [f.key, f.default]))
   );
+
+  useEffect(() => {
+    onSelectedIndexChange?.(selectedIndex);
+  }, [onSelectedIndexChange, selectedIndex]);
 
   useInput((input, key) => {
     if (key.escape) {

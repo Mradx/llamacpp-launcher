@@ -17,6 +17,8 @@ interface ContextSelectProps {
   hardware?: HardwareInfo | null;
   onSelect: (ctx: number) => void;
   onBack: () => void;
+  initialSelectedIndex?: number;
+  onSelectedIndexChange?: (selectedIndex: number) => void;
 }
 
 const descriptions: Record<number, string> = {
@@ -36,9 +38,20 @@ function fitLabel(status: FitStatus): string {
   }
 }
 
-export function ContextSelect({ options, modelSizeBytes, metadata, hardware, onSelect, onBack }: ContextSelectProps) {
+export function ContextSelect({
+  options,
+  modelSizeBytes,
+  metadata,
+  hardware,
+  onSelect,
+  onBack,
+  initialSelectedIndex,
+  onSelectedIndexChange,
+}: ContextSelectProps) {
   const suggestedIdx = Math.floor(options.length / 2);
-  const [selectedIndex, setSelectedIndex] = useState(suggestedIdx);
+  const [selectedIndex, setSelectedIndex] = useState(() => (
+    Math.min(initialSelectedIndex ?? suggestedIdx, Math.max(0, options.length - 1))
+  ));
   const { columns } = useTerminalViewport();
   const listViewport = useScrollableViewport({
     itemCount: options.length,
@@ -54,6 +67,10 @@ export function ContextSelect({ options, modelSizeBytes, metadata, hardware, onS
   useEffect(() => {
     setSelectedIndex(i => Math.min(i, Math.max(0, options.length - 1)));
   }, [options.length]);
+
+  useEffect(() => {
+    onSelectedIndexChange?.(selectedIndex);
+  }, [onSelectedIndexChange, selectedIndex]);
 
   useInput((input, key) => {
     if (key.escape) {
