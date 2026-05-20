@@ -38,6 +38,7 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
   const [portError, setPortError] = useState('');
   const bodyHeight = Math.max(8, rows - 6);
   const lineWidth = Math.max(24, columns - 6);
+  const exampleLlamaCppDir = `${process.env.USERPROFILE || 'C:\\Users\\Default'}\\ai\\llama.cpp`;
 
   useEffect(() => {
     setDefaultPort(String(loadStoredConfig().port));
@@ -149,7 +150,7 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
             <Text>Path to your llama.cpp directory:</Text>
           </Box>
           <Box marginTop={0}>
-            <Text dimColor>{truncateText('  Example: C:\\Users\\Arthur\\ai\\llama.cpp', lineWidth)}</Text>
+            <Text dimColor>{truncateText(`  Example: ${exampleLlamaCppDir}`, lineWidth)}</Text>
           </Box>
           <Box marginTop={1}>
             <Text color={theme.accent}>{' › '}</Text>
