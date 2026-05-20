@@ -1,8 +1,9 @@
 import { spawn, execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { tmpdir, availableParallelism } from 'node:os';
+import { dirname, join, delimiter } from 'node:path';
+import { tmpdir, availableParallelism, homedir } from 'node:os';
 import type { SpawnOptions } from 'node:child_process';
+import { isMac, isWindows } from '../utils/platform.js';
 
 // ── Types ──
 
@@ -13,7 +14,17 @@ export interface PrerequisiteStatus {
   node: { found: boolean; version: string | null; nvmFound: boolean; supported: boolean };
   gpu: { name: string | null; arch: number | null };
   cpuCores: number;
+  // macOS-only fields
+  compiler?: { found: boolean; label: string | null };
+  brew?: { found: boolean };
 }
+
+export type AutoInstallName =
+  | 'Git'
+  | 'Node.js'
+  | 'Visual Studio 2022'
+  | 'CMake'
+  | 'Xcode Command Line Tools';
 
 export type InstallPhase =
   | 'clone'
@@ -79,6 +90,10 @@ function getGitVersion(gitCmd: string): string | null {
 }
 
 function resolveGitCommand(): string | null {
+  if (isMac()) {
+    return resolveMacBinary('git', ['/opt/homebrew/bin/git', '/usr/bin/git', '/usr/local/bin/git']);
+  }
+
   refreshProcessPath();
 
   if (getGitVersion('git')) return 'git';
@@ -137,6 +152,10 @@ function getNpmCandidates(): string[] {
 }
 
 function resolveNpmCommand(): string | null {
+  if (isMac()) {
+    return resolveNpmCommandMac();
+  }
+
   refreshProcessPath();
 
   for (const candidate of getNpmCandidates()) {
@@ -158,9 +177,14 @@ function resolveNpmCommand(): string | null {
 
 function withPrependedPath(env: NodeJS.ProcessEnv, prefix: string): NodeJS.ProcessEnv {
   const next = { ...env };
-  const currentPath = next.Path || next.PATH || '';
-  delete next.PATH;
-  next.Path = prefix ? `${prefix};${currentPath}` : currentPath;
+  if (isWindows()) {
+    const currentPath = next.Path || next.PATH || '';
+    delete next.PATH;
+    next.Path = prefix ? `${prefix}${delimiter}${currentPath}` : currentPath;
+  } else {
+    const currentPath = next.PATH || '';
+    next.PATH = prefix ? `${prefix}${delimiter}${currentPath}` : currentPath;
+  }
   return next;
 }
 
@@ -173,21 +197,34 @@ function hasWebUiAssets(llamaCppDir: string): boolean {
   return WEB_UI_ASSETS.every(asset => existsSync(join(distDir, asset)));
 }
 
+function pathContains(parts: string[], dir: string): boolean {
+  return isWindows()
+    ? parts.some(part => part.toLowerCase() === dir.toLowerCase())
+    : parts.some(part => part === dir);
+}
+
 function prependPath(dir: string): void {
-  const parts = (process.env.PATH || '').split(';').filter(Boolean);
-  if (!parts.some(part => part.toLowerCase() === dir.toLowerCase())) {
-    process.env.PATH = `${dir};${process.env.PATH || ''}`;
+  const parts = (process.env.PATH || '').split(delimiter).filter(Boolean);
+  if (!pathContains(parts, dir)) {
+    process.env.PATH = `${dir}${delimiter}${process.env.PATH || ''}`;
   }
 }
 
 function appendPath(dir: string): void {
-  const parts = (process.env.PATH || '').split(';').filter(Boolean);
-  if (!parts.some(part => part.toLowerCase() === dir.toLowerCase())) {
-    process.env.PATH = `${process.env.PATH || ''};${dir}`;
+  const parts = (process.env.PATH || '').split(delimiter).filter(Boolean);
+  if (!pathContains(parts, dir)) {
+    process.env.PATH = `${process.env.PATH || ''}${delimiter}${dir}`;
   }
 }
 
 function refreshProcessPath(): void {
+  if (isMac()) {
+    for (const dir of ['/opt/homebrew/bin', '/usr/local/bin']) {
+      if (existsSync(dir)) appendPath(dir);
+    }
+    return;
+  }
+
   const envPath = tryExec(
     `powershell -NoProfile -ExecutionPolicy Bypass -Command "$m=[Environment]::GetEnvironmentVariable('Path','Machine'); $u=[Environment]::GetEnvironmentVariable('Path','User'); [Console]::Out.Write($m+';'+$u)"`,
   );
@@ -536,7 +573,123 @@ function detectGpuArch(): PrerequisiteStatus['gpu'] {
   return { name: null, arch: null };
 }
 
+// ── macOS detection ──
+
+function resolveMacBinary(name: string, fallbacks: string[]): string | null {
+  const onPath = tryExec(`command -v ${name}`);
+  if (onPath && existsSync(onPath)) return name;
+  for (const candidate of fallbacks) {
+    if (existsSync(candidate)) {
+      prependPath(dirname(candidate));
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function nvmNodeBinDirs(): string[] {
+  const root = join(homedir(), '.nvm', 'versions', 'node');
+  if (!existsSync(root)) return [];
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter(d => d.isDirectory() && /^v\d+\.\d+\.\d+$/i.test(d.name))
+      .map(d => d.name)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      .map(name => join(root, name, 'bin'));
+  } catch {
+    return [];
+  }
+}
+
+function resolveNpmCommandMac(): string | null {
+  const onPath = tryExec('command -v npm');
+  if (onPath && existsSync(onPath)) return onPath;
+  const candidates = ['/opt/homebrew/bin/npm', '/usr/local/bin/npm', ...nvmNodeBinDirs().map(d => join(d, 'npm'))];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      prependPath(dirname(candidate));
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function detectCmakeMac(): PrerequisiteStatus['cmake'] {
+  const cmake = resolveMacBinary('cmake', ['/opt/homebrew/bin/cmake', '/usr/local/bin/cmake']);
+  return cmake
+    ? { found: true, path: cmake, vsEdition: null }
+    : { found: false, path: null, vsEdition: null };
+}
+
+function detectCompilerMac(): { found: boolean; label: string | null } {
+  const cltPath = tryExec('xcode-select -p');
+  const clang = tryExec('clang --version');
+  if (cltPath && clang) {
+    const match = clang.match(/version\s+([\d.]+)/i) || clang.match(/clang-([\d.]+)/i);
+    return { found: true, label: match ? `clang ${match[1]}` : 'Apple clang' };
+  }
+  return { found: false, label: null };
+}
+
+function detectNodeMac(): PrerequisiteStatus['node'] {
+  let nodeVersion = tryExec('node --version');
+  let nvmFound = existsSync(join(homedir(), '.nvm'));
+
+  if (!nodeVersion) {
+    const candidates = [
+      '/opt/homebrew/bin/node',
+      '/usr/local/bin/node',
+      ...nvmNodeBinDirs().map(d => join(d, 'node')),
+    ];
+    if (candidates.length > 2) nvmFound = true;
+    for (const candidate of candidates) {
+      if (!existsSync(candidate)) continue;
+      nodeVersion = tryExec(`"${candidate}" --version`);
+      if (nodeVersion) {
+        prependPath(dirname(candidate));
+        break;
+      }
+    }
+  }
+
+  const version = nodeVersion?.replace(/^v/, '') || null;
+  return {
+    found: version !== null,
+    version,
+    nvmFound,
+    supported: isWebUiNodeSupportedVersion(version),
+  };
+}
+
+function detectMetalGpuMac(): PrerequisiteStatus['gpu'] {
+  const profile = tryExec('system_profiler SPDisplaysDataType 2>/dev/null');
+  const match = profile?.match(/Chipset Model:\s*(.+)/);
+  const name = match ? match[1].trim() : (process.arch === 'arm64' ? 'Apple GPU' : null);
+  return { name, arch: null };
+}
+
+function detectBrewMac(): { found: boolean } {
+  return { found: resolveMacBinary('brew', ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']) !== null };
+}
+
+function detectPrerequisitesMac(): PrerequisiteStatus {
+  return {
+    git: detectGit(),
+    cmake: detectCmakeMac(),
+    cuda: { found: false, path: null, version: null, allVersions: [] },
+    node: detectNodeMac(),
+    gpu: detectMetalGpuMac(),
+    cpuCores: availableParallelism(),
+    compiler: detectCompilerMac(),
+    brew: detectBrewMac(),
+  };
+}
+
 export function detectPrerequisites(): PrerequisiteStatus {
+  if (isMac()) {
+    return detectPrerequisitesMac();
+  }
+
   return {
     git: detectGit(),
     cmake: detectVsCmake(),
@@ -548,6 +701,15 @@ export function detectPrerequisites(): PrerequisiteStatus {
 }
 
 export function getCriticalMissing(status: PrerequisiteStatus): string[] {
+  if (isMac()) {
+    const missing: string[] = [];
+    // Xcode CLT first: installing it also provides git and the clang toolchain.
+    if (!status.compiler?.found) missing.push('Xcode Command Line Tools');
+    if (!status.git.found) missing.push('Git');
+    if (!status.cmake.found) missing.push('CMake');
+    return missing;
+  }
+
   const missing: string[] = [];
   if (!status.git.found) missing.push('Git');
   if (!status.cmake.found) missing.push('Visual Studio 2022');
@@ -555,6 +717,12 @@ export function getCriticalMissing(status: PrerequisiteStatus): string[] {
 }
 
 export function getOptionalMissing(status: PrerequisiteStatus): string[] {
+  if (isMac()) {
+    const missing: string[] = [];
+    if (!status.node.found || !status.node.supported) missing.push('Node.js');
+    return missing;
+  }
+
   const missing: string[] = [];
   if (!status.cuda.found) missing.push('CUDA Toolkit');
   if (!status.gpu.name) missing.push('NVIDIA GPU');
@@ -563,6 +731,9 @@ export function getOptionalMissing(status: PrerequisiteStatus): string[] {
 }
 
 export function canAutoInstall(name: string): boolean {
+  if (isMac()) {
+    return name === 'Git' || name === 'Node.js' || name === 'CMake' || name === 'Xcode Command Line Tools';
+  }
   return name === 'Git' || name === 'Node.js' || name === 'Visual Studio 2022';
 }
 
@@ -980,10 +1151,95 @@ async function installVsBuildTools(onProgress: ProgressCallback): Promise<{ ok: 
   return { ok: false, error: 'VS Build Tools installation did not complete. Check the VS Installer or install manually.' };
 }
 
-export async function autoInstallPrereq(
-  name: 'Git' | 'Node.js' | 'Visual Studio 2022',
+async function installXcodeCltMac(onProgress: ProgressCallback): Promise<{ ok: boolean; error?: string }> {
+  if (detectCompilerMac().found) return { ok: true };
+
+  const tracker = new InstallTracker(onProgress, 'clone', 'Xcode Command Line Tools');
+  tracker.report('Requesting Xcode Command Line Tools install...');
+  // `xcode-select --install` opens a GUI dialog and returns immediately; errors
+  // (e.g. "already installed" / "already in progress") are non-fatal here.
+  tryExec('xcode-select --install');
+
+  tracker.report(
+    'Waiting for Command Line Tools to finish installing...',
+    'Accept the macOS install dialog if it appears',
+  );
+  tracker.startStallDetection(30, {
+    checkNetwork: false,
+    idleDetail: (silentSec) => `Waiting for Command Line Tools (${silentSec}s)`,
+    stalled: false,
+  });
+
+  const maxWaitMs = 30 * 60 * 1000;
+  const pollMs = 5000;
+  const waitStart = Date.now();
+  while (Date.now() - waitStart < maxWaitMs) {
+    if (detectCompilerMac().found) break;
+    await new Promise(resolve => setTimeout(resolve, pollMs));
+  }
+
+  tracker.stop();
+  if (detectCompilerMac().found) return { ok: true };
+  return {
+    ok: false,
+    error: 'Command Line Tools did not finish installing. Complete the macOS installer dialog, or run: xcode-select --install',
+  };
+}
+
+async function brewInstall(
+  formula: string,
+  displayName: string,
   onProgress: ProgressCallback,
 ): Promise<{ ok: boolean; error?: string }> {
+  if (!detectBrewMac().found) {
+    return {
+      ok: false,
+      error: `Homebrew is required to auto-install ${displayName}. Install it from https://brew.sh, then press [R] to re-check.`,
+    };
+  }
+
+  const brew = resolveMacBinary('brew', ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']) || 'brew';
+  const tracker = new InstallTracker(onProgress, 'clone', `Installing ${displayName}`);
+  tracker.report(`Installing ${displayName} via Homebrew...`);
+  tracker.startStallDetection(45);
+
+  try {
+    await spawnWithProgress(
+      brew,
+      ['install', formula],
+      {},
+      (line) => tracker.report(`Installing ${displayName}...`, line),
+    );
+    tracker.stop();
+    refreshProcessPath();
+    return { ok: true };
+  } catch (err) {
+    tracker.stop();
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Failed to install ${displayName}: ${msg}` };
+  }
+}
+
+export async function autoInstallPrereq(
+  name: AutoInstallName,
+  onProgress: ProgressCallback,
+): Promise<{ ok: boolean; error?: string }> {
+  if (isMac()) {
+    switch (name) {
+      case 'Xcode Command Line Tools':
+        return installXcodeCltMac(onProgress);
+      case 'Git':
+        // Git ships with the Command Line Tools; prefer brew if available.
+        return detectBrewMac().found ? brewInstall('git', 'Git', onProgress) : installXcodeCltMac(onProgress);
+      case 'CMake':
+        return brewInstall('cmake', 'CMake', onProgress);
+      case 'Node.js':
+        return brewInstall('node', 'Node.js', onProgress);
+      default:
+        return { ok: false, error: `Unsupported prerequisite on macOS: ${name}` };
+    }
+  }
+
   if (name === 'Git') {
     return installViaWinget('Git.Git', 'Git', onProgress);
   }
@@ -1039,9 +1295,13 @@ export async function buildWebUI(
 
   const npmCmd = resolveNpmCommand();
   const npmDir = npmCmd ? dirname(npmCmd) : null;
-  const nodeCmd = npmDir && existsSync(join(npmDir, 'node.exe'))
-    ? join(npmDir, 'node.exe')
-    : process.execPath.toLowerCase().endsWith('node.exe')
+  const nodeBin = isWindows() ? 'node.exe' : 'node';
+  const execIsNode = isWindows()
+    ? process.execPath.toLowerCase().endsWith('node.exe')
+    : process.execPath.endsWith('/node');
+  const nodeCmd = npmDir && existsSync(join(npmDir, nodeBin))
+    ? join(npmDir, nodeBin)
+    : execIsNode
     ? process.execPath
     : 'node';
 
@@ -1118,6 +1378,74 @@ export async function buildWebUI(
 }
 
 export async function cmakeConfigure(
+  llamaCppDir: string,
+  prereqs: PrerequisiteStatus,
+  onProgress: ProgressCallback,
+): Promise<void> {
+  if (isMac()) return cmakeConfigureMac(llamaCppDir, prereqs, onProgress);
+  return cmakeConfigureWindows(llamaCppDir, prereqs, onProgress);
+}
+
+async function cmakeConfigureMac(
+  llamaCppDir: string,
+  prereqs: PrerequisiteStatus,
+  onProgress: ProgressCallback,
+): Promise<void> {
+  if (!prereqs.cmake.path) throw new Error('CMake not found');
+
+  onProgress({ phase: 'cmake-configure', message: 'Configuring CMake project (Metal)...' });
+
+  // Clean old build cache (cross-platform), preserving any built web UI assets.
+  const buildDir = join(llamaCppDir, 'build');
+  if (existsSync(buildDir)) {
+    onProgress({ phase: 'cmake-configure', message: 'Cleaning old build cache...' });
+    const uiDistDir = webUiDistDir(llamaCppDir);
+    const preservedUiDistDir = join(llamaCppDir, `.llamacpp-launcher-ui-dist-${Date.now()}`);
+    let preservedUiDist = false;
+
+    if (existsSync(uiDistDir) && hasWebUiAssets(llamaCppDir)) {
+      try {
+        rmSync(preservedUiDistDir, { recursive: true, force: true });
+        renameSync(uiDistDir, preservedUiDistDir);
+        preservedUiDist = true;
+      } catch {
+        preservedUiDist = false;
+      }
+    }
+
+    rmSync(buildDir, { recursive: true, force: true });
+
+    if (preservedUiDist) {
+      mkdirSync(dirname(uiDistDir), { recursive: true });
+      renameSync(preservedUiDistDir, uiDistDir);
+      onProgress({ phase: 'cmake-configure', message: 'Preserved web UI assets...' });
+    }
+  }
+
+  const hasNinja = !!resolveMacBinary('ninja', ['/opt/homebrew/bin/ninja', '/usr/local/bin/ninja']);
+  const args = [
+    '-B', 'build',
+    '-G', hasNinja ? 'Ninja' : 'Unix Makefiles',
+    '-DCMAKE_BUILD_TYPE=Release',
+    '-DGGML_METAL=ON',
+  ];
+  if (process.arch === 'arm64') {
+    args.push('-DCMAKE_OSX_ARCHITECTURES=arm64');
+  }
+  args.push('-DLLAMA_BUILD_BORINGSSL=ON');
+  args.push('-DLLAMA_BUILD_UI=ON');
+
+  await spawnWithProgress(
+    prereqs.cmake.path,
+    args,
+    { cwd: llamaCppDir },
+    (line) => {
+      onProgress({ phase: 'cmake-configure', message: 'Configuring...', detail: line });
+    },
+  );
+}
+
+async function cmakeConfigureWindows(
   llamaCppDir: string,
   prereqs: PrerequisiteStatus,
   onProgress: ProgressCallback,
@@ -1225,6 +1553,45 @@ export async function cmakeConfigure(
 }
 
 export async function cmakeBuild(
+  llamaCppDir: string,
+  prereqs: PrerequisiteStatus,
+  onProgress: ProgressCallback,
+): Promise<void> {
+  if (isMac()) return cmakeBuildMac(llamaCppDir, prereqs, onProgress);
+  return cmakeBuildWindows(llamaCppDir, prereqs, onProgress);
+}
+
+async function cmakeBuildMac(
+  llamaCppDir: string,
+  prereqs: PrerequisiteStatus,
+  onProgress: ProgressCallback,
+): Promise<void> {
+  if (!prereqs.cmake.path) throw new Error('CMake not found');
+
+  onProgress({ phase: 'cmake-build', message: 'Compiling llama-server (Metal)...' });
+
+  const cores = Math.max(1, prereqs.cpuCores);
+  await spawnWithProgress(
+    prereqs.cmake.path,
+    ['--build', 'build', '-j', String(cores), '--target', 'llama-server'],
+    { cwd: llamaCppDir },
+    (line) => {
+      let percent: number | undefined;
+      const pctMatch = line.match(/\[\s*(\d+)%\]/);
+      const stepMatch = line.match(/\[(\d+)\/(\d+)\]/);
+      if (pctMatch) {
+        percent = parseInt(pctMatch[1], 10);
+      } else if (stepMatch) {
+        const current = parseInt(stepMatch[1], 10);
+        const total = parseInt(stepMatch[2], 10);
+        percent = Math.round((current / total) * 100);
+      }
+      onProgress({ phase: 'cmake-build', message: 'Building...', detail: line, percent });
+    },
+  );
+}
+
+async function cmakeBuildWindows(
   llamaCppDir: string,
   prereqs: PrerequisiteStatus,
   onProgress: ProgressCallback,

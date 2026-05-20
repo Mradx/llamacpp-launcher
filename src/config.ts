@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { z } from 'zod';
 import type { StoredConfig, Config } from './types.js';
 import { getDataPath, getPackageResourcePath } from './storage.js';
+import { isWindows, serverBinaryName } from './utils/platform.js';
 
 const StoredConfigSchema = z.object({
   llamaCppDir: z.string(),
@@ -77,11 +78,34 @@ export function loadStoredConfig(): StoredConfig {
   return stored;
 }
 
+// Build-output layouts differ by CMake generator: Windows (Visual Studio,
+// multi-config) emits build/bin/Release/, while single-config generators used on
+// macOS/Linux (Ninja, Unix Makefiles) emit build/bin/. Prefer a layout whose
+// binary actually exists, else fall back to the platform default.
+function serverLayoutCandidates(): string[][] {
+  return isWindows()
+    ? [['build', 'bin', 'Release'], ['build', 'bin']]
+    : [['build', 'bin'], ['build', 'bin', 'Release']];
+}
+
+export function resolveServerLocation(llamaCppDir: string): { serverDir: string; serverExe: string } {
+  const serverExe = serverBinaryName();
+  const candidates = serverLayoutCandidates();
+  for (const sub of candidates) {
+    const serverDir = join(llamaCppDir, ...sub);
+    if (existsSync(join(serverDir, serverExe))) {
+      return { serverDir, serverExe };
+    }
+  }
+  return { serverDir: join(llamaCppDir, ...candidates[0]), serverExe };
+}
+
 export function resolveConfig(stored: StoredConfig): Config {
+  const { serverDir, serverExe } = resolveServerLocation(stored.llamaCppDir);
   return {
     ...stored,
-    serverDir: join(stored.llamaCppDir, 'build', 'bin', 'Release'),
-    serverExe: 'llama-server.exe',
+    serverDir,
+    serverExe,
   };
 }
 
@@ -116,13 +140,16 @@ export function validateLlamaCppDir(dir: string): { ok: boolean; error?: string 
   if (!existsSync(expanded)) {
     return { ok: false, error: `Directory not found: ${expanded}` };
   }
-  const buildDir = join(expanded, 'build', 'bin', 'Release');
-  if (!existsSync(buildDir)) {
-    return { ok: false, error: `Build directory not found: ${buildDir}\nRun: cmake --build build --config Release` };
+  const buildCmd = isWindows()
+    ? 'cmake --build build --config Release --target llama-server'
+    : 'cmake --build build --target llama-server';
+  const { serverDir, serverExe } = resolveServerLocation(expanded);
+  if (!existsSync(serverDir)) {
+    return { ok: false, error: `Build directory not found: ${serverDir}\nRun: ${buildCmd}` };
   }
-  const exePath = join(buildDir, 'llama-server.exe');
+  const exePath = join(serverDir, serverExe);
   if (!existsSync(exePath)) {
-    return { ok: false, error: `llama-server.exe not found in ${buildDir}\nRun: cmake --build build --config Release` };
+    return { ok: false, error: `${serverExe} not found in ${serverDir}\nRun: ${buildCmd}` };
   }
   return { ok: true };
 }

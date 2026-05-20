@@ -27,3 +27,20 @@ test('falls back to size heuristic and marks estimates when metadata is absent',
   assert.equal(fit.metadata.isEstimated, true);
   assert.equal(fit.isEstimated, true);
 });
+
+test('unified memory treats one pool and does not sum VRAM + RAM', () => {
+  const ramMb = 32000;
+  const vramMb = 24000; // Metal working-set budget (~0.75 of RAM)
+  const gb = n => n * 1024 ** 3;
+
+  // Fully Metal-resident.
+  assert.equal(calculateFit(gb(16), 4096, vramMb, ramMb, undefined, true).fitStatus, 'GPU_OK');
+  // Exceeds the GPU budget but fits the unified pool.
+  assert.equal(calculateFit(gb(24), 4096, vramMb, ramMb, undefined, true).fitStatus, 'PARTIAL');
+  // Exceeds the unified pool entirely.
+  assert.equal(calculateFit(gb(28), 4096, vramMb, ramMb, undefined, true).fitStatus, 'TOO_BIG');
+
+  // The same large model is PARTIAL under the discrete (summed-pool) model;
+  // the unified path must not double-count VRAM + RAM.
+  assert.equal(calculateFit(gb(28), 4096, vramMb, ramMb, undefined, false).fitStatus, 'PARTIAL');
+});

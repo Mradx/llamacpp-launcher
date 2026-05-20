@@ -11,3 +11,11 @@ export function expandHome(p: string): string {
 export function isWindows(): boolean {
   return process.platform === 'win32';
 }
+
+export function isMac(): boolean {
+  return process.platform === 'darwin';
+}
+
+export function serverBinaryName(): string {
+  return isWindows() ? 'llama-server.exe' : 'llama-server';
+}

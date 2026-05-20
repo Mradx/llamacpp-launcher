@@ -71,7 +71,8 @@ export async function listGgufFiles(
   repo: string,
   contextTokens: number,
   vramMb: number,
-  ramMb: number
+  ramMb: number,
+  unified = false
 ): Promise<HfFile[]> {
   const url = `https://huggingface.co/api/models/${repo}/tree/main?recursive=true`;
 
@@ -102,7 +103,7 @@ export async function listGgufFiles(
     : null;
   return grouped.map(entry => {
     const fileMetadata = metadataForFile(metadata, entry.path);
-    const fit = calculateFit(entry.size, contextTokens, vramMb, ramMb, fileMetadata);
+    const fit = calculateFit(entry.size, contextTokens, vramMb, ramMb, fileMetadata, unified);
     return {
       path: entry.path,
       sizeBytes: entry.size,

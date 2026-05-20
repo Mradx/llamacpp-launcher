@@ -9,6 +9,9 @@ import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { clampLines, truncateText } from '../utils/terminal.js';
 import type { StoredConfig } from '../types.js';
 import { theme } from '../theme.js';
+import { isMac } from '../utils/platform.js';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 interface FirstRunSetupProps {
   onDone: () => void;
@@ -38,7 +41,9 @@ export function FirstRunSetup({ onDone }: FirstRunSetupProps) {
   const [portError, setPortError] = useState('');
   const bodyHeight = Math.max(8, rows - 6);
   const lineWidth = Math.max(24, columns - 6);
-  const exampleLlamaCppDir = `${process.env.USERPROFILE || 'C:\\Users\\Default'}\\ai\\llama.cpp`;
+  const exampleLlamaCppDir = isMac()
+    ? join(homedir(), 'ai', 'llama.cpp')
+    : `${process.env.USERPROFILE || 'C:\\Users\\Default'}\\ai\\llama.cpp`;
 
   useEffect(() => {
     setDefaultPort(String(loadStoredConfig().port));

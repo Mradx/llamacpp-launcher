@@ -1,5 +1,12 @@
 import { execSync } from 'node:child_process';
+import { totalmem } from 'node:os';
 import type { HardwareInfo } from '../types.js';
+import { isMac } from '../utils/platform.js';
+
+// Fraction of unified memory Metal will comfortably keep as a GPU working set.
+// Apple's recommendedMaxWorkingSetSize is ~75% on Apple Silicon Macs; querying it
+// exactly needs native Metal bindings, so we approximate.
+const METAL_WORKING_SET_FRACTION = 0.75;
 
 function tryExec(cmd: string): string | null {
   try {
@@ -64,7 +71,56 @@ function detectRam(): number {
   return 0;
 }
 
+function detectCpuMac(): string {
+  return tryExec('sysctl -n machdep.cpu.brand_string') || 'Unknown CPU';
+}
+
+function parseVramMb(profile: string): number | null {
+  // e.g. "VRAM (Total): 4 GB" or "VRAM (Dynamic, Max): 1536 MB"
+  const m = profile.match(/VRAM\s*\([^)]*\):\s*([\d.]+)\s*(MB|GB)/i);
+  if (!m) return null;
+  const value = parseFloat(m[1]);
+  if (isNaN(value)) return null;
+  return Math.round(m[2].toUpperCase() === 'GB' ? value * 1024 : value);
+}
+
+function detectGpuMac(cpuName: string, ramMb: number): { name: string; vramMb: number; unifiedMemory: boolean } {
+  const profile = tryExec('system_profiler SPDisplaysDataType 2>/dev/null');
+  const chipMatch = profile?.match(/Chipset Model:\s*(.+)/);
+  const chipset = chipMatch ? chipMatch[1].trim() : null;
+  const budgetMb = Math.round(ramMb * METAL_WORKING_SET_FRACTION);
+
+  // Apple Silicon: GPU shares system RAM (unified memory), no discrete VRAM.
+  if (process.arch === 'arm64') {
+    return { name: chipset || cpuName || 'Apple GPU', vramMb: budgetMb, unifiedMemory: true };
+  }
+
+  // Intel Mac: best-effort discrete VRAM; otherwise treat as a shared pool.
+  const vram = profile ? parseVramMb(profile) : null;
+  if (vram && vram > 0) {
+    return { name: chipset || 'Unknown GPU', vramMb: vram, unifiedMemory: false };
+  }
+  return { name: chipset || cpuName || 'Unknown GPU', vramMb: budgetMb, unifiedMemory: true };
+}
+
+async function detectHardwareMac(): Promise<HardwareInfo> {
+  const cpuName = detectCpuMac();
+  const ramMb = Math.floor(totalmem() / (1024 * 1024));
+  const gpu = detectGpuMac(cpuName, ramMb);
+  return {
+    gpuName: gpu.name,
+    cpuName,
+    vramMb: gpu.vramMb,
+    ramMb,
+    unifiedMemory: gpu.unifiedMemory,
+  };
+}
+
 export async function detectHardware(): Promise<HardwareInfo> {
+  if (isMac()) {
+    return detectHardwareMac();
+  }
+
   const gpu = detectGpu();
   const cpuName = detectCpu();
   const ramMb = detectRam();
@@ -74,5 +130,6 @@ export async function detectHardware(): Promise<HardwareInfo> {
     cpuName,
     vramMb: gpu.vramMb,
     ramMb,
+    unifiedMemory: false,
   };
 }

@@ -324,6 +324,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           metadata={effectiveMetadata}
           vramMb={hardware.vramMb}
           ramMb={hardware.ramMb}
+          unifiedMemory={hardware.unifiedMemory}
           onSelect={handleLayerSelect}
           onBack={goBackFromLayers}
           initialSelectedIndex={layerSelectIndex}

@@ -104,7 +104,8 @@ export function QuantPicker({
           repo,
           contextTokens,
           hardware?.vramMb || 0,
-          hardware?.ramMb || 0
+          hardware?.ramMb || 0,
+          hardware?.unifiedMemory ?? false
         );
         if (!cancelled) {
           const nextFiles = markDownloaded(result, downloadedFileNames);

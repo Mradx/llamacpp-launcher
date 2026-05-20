@@ -101,7 +101,7 @@ export function ContextSelect({
 
           let fit: ReturnType<typeof calculateFit> | null = null;
           if (canShowFit) {
-            fit = calculateFit(modelSizeBytes!, ctx, hardware!.vramMb, hardware!.ramMb, metadata);
+            fit = calculateFit(modelSizeBytes!, ctx, hardware!.vramMb, hardware!.ramMb, metadata, hardware!.unifiedMemory);
           }
           const exceedsTrainContext = !!(metadata?.contextLength && ctx > metadata.contextLength);
 

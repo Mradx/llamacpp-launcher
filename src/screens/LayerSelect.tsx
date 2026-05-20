@@ -20,6 +20,7 @@ interface LayerSelectProps {
   metadata?: ModelMetadata;
   vramMb: number;
   ramMb: number;
+  unifiedMemory: boolean;
   onSelect: (gpuLayers: number) => void;
   onBack: () => void;
   initialSelectedIndex?: number;
@@ -84,11 +85,58 @@ function MemoryBar({ label, color, usedMb, totalMb }: { label: string; color: st
   );
 }
 
-function SplitPreview({ totalLayers, modelSizeMb, kvCacheMb, gpuLayers, vramMb, ramMb }: {
+function UnifiedMemoryBar({ gpuUsedMb, cpuUsedMb, totalMb }: { gpuUsedMb: number; cpuUsedMb: number; totalMb: number }) {
+  const barWidth = 20;
+  const usedMb = gpuUsedMb + cpuUsedMb;
+  const pct = totalMb > 0 ? Math.min(100, Math.round((usedMb / totalMb) * 100)) : 0;
+  const filled = totalMb > 0 ? Math.round(Math.min(1, usedMb / totalMb) * barWidth) : 0;
+  const gpuCells = totalMb > 0 ? Math.min(filled, Math.round(Math.min(1, gpuUsedMb / totalMb) * barWidth)) : 0;
+  const cpuCells = Math.max(0, filled - gpuCells);
+  const empty = barWidth - gpuCells - cpuCells;
+
+  return (
+    <Box>
+      <Box width={9}><Text color={theme.ram} bold>Unified</Text></Box>
+      <Box width={12}><Text>{formatMb(usedMb).padStart(10)}</Text></Box>
+      <Text dimColor> / </Text>
+      <Box width={12}><Text dimColor>{formatMb(totalMb).padStart(10)}</Text></Box>
+      <Text> </Text>
+      <Text color={theme.success}>{'█'.repeat(gpuCells)}</Text>
+      <Text color={theme.ram}>{'█'.repeat(cpuCells)}</Text>
+      <Text dimColor>{'░'.repeat(empty)}</Text>
+      <Text dimColor> {String(pct).padStart(3)}%</Text>
+    </Box>
+  );
+}
+
+function SplitPreview({ totalLayers, modelSizeMb, kvCacheMb, gpuLayers, vramMb, ramMb, unifiedMemory }: {
   totalLayers: number; modelSizeMb: number; kvCacheMb: number;
-  gpuLayers: number; vramMb: number; ramMb: number;
+  gpuLayers: number; vramMb: number; ramMb: number; unifiedMemory: boolean;
 }) {
   const split = calculateLayerSplit(totalLayers, modelSizeMb, kvCacheMb, gpuLayers);
+  if (unifiedMemory) {
+    // Unified memory: one shared pool, so total RAM use is constant. The layer
+    // count instead chooses *where compute runs* (Metal GPU vs CPU), shown as the
+    // GPU/CPU split of one bar.
+    const cpuLayers = totalLayers - split.gpuLayers;
+    const gpuPct = totalLayers > 0 ? Math.round((split.gpuLayers / totalLayers) * 100) : 0;
+    return (
+      <Box flexDirection="column">
+        <Box marginBottom={1}>
+          <Text dimColor>Unified memory: layers choose where to compute (GPU vs CPU), not how much RAM. More on GPU = faster.</Text>
+        </Box>
+        <UnifiedMemoryBar gpuUsedMb={split.gpuTotalMb} cpuUsedMb={split.cpuTotalMb} totalMb={ramMb} />
+        <Box>
+          <Box width={9}><Text bold>Compute</Text></Box>
+          <Text color={theme.success}>{'█'} GPU {gpuPct}% </Text>
+          <Text dimColor>{split.gpuLayers}/{totalLayers} · {formatMb(split.gpuTotalMb)}</Text>
+          <Text>   </Text>
+          <Text color={theme.ram}>{'█'} CPU {100 - gpuPct}% </Text>
+          <Text dimColor>{cpuLayers}/{totalLayers} · {formatMb(split.cpuTotalMb)}</Text>
+        </Box>
+      </Box>
+    );
+  }
   return (
     <Box flexDirection="column">
       <MemoryBar label="GPU" color={theme.success} usedMb={split.gpuTotalMb} totalMb={vramMb} />
@@ -132,6 +180,7 @@ export function LayerSelect({
   metadata,
   vramMb,
   ramMb,
+  unifiedMemory,
   onSelect,
   onBack,
   initialSelectedIndex,
@@ -200,7 +249,7 @@ export function LayerSelect({
           <SplitPreview
             totalLayers={totalLayers} modelSizeMb={modelSizeMb}
             kvCacheMb={kvCacheMb} gpuLayers={customLayers}
-            vramMb={vramMb} ramMb={ramMb}
+            vramMb={vramMb} ramMb={ramMb} unifiedMemory={unifiedMemory}
           />
         </Box>
 
@@ -268,7 +317,7 @@ export function LayerSelect({
         <SplitPreview
           totalLayers={totalLayers} modelSizeMb={modelSizeMb}
           kvCacheMb={kvCacheMb} gpuLayers={highlightLayers}
-          vramMb={vramMb} ramMb={ramMb}
+          vramMb={vramMb} ramMb={ramMb} unifiedMemory={unifiedMemory}
         />
       </Box>
 

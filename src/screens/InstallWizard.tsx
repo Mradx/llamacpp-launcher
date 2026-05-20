@@ -10,7 +10,9 @@ import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { clampLines, truncateText } from '../utils/terminal.js';
 import { theme } from '../theme.js';
 import { existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { isMac, serverBinaryName } from '../utils/platform.js';
 
 interface InstallWizardProps {
   onDone: (llamaCppDir: string) => void;
@@ -52,7 +54,10 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
   } = useInstaller();
 
   const [step, setStep] = useState<WizardStep>('prereq-check');
-  const [targetDir, setTargetDir] = useState(() => `${process.env.USERPROFILE || 'C:\\Users\\Default'}\\llama.cpp`);
+  const [targetDir, setTargetDir] = useState(() =>
+    isMac()
+      ? join(homedir(), 'llama.cpp')
+      : `${process.env.USERPROFILE || 'C:\\Users\\Default'}\\llama.cpp`);
   const [dirError, setDirError] = useState('');
   const [autoInstalling, setAutoInstalling] = useState<string | null>(null);
   const [autoInstallError, setAutoInstallError] = useState<string | null>(null);
@@ -127,7 +132,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
     }
     if (existsSync(trimmed)) {
       // allow if it's an existing llama.cpp clone
-      if (existsSync(`${trimmed}\\.git`)) {
+      if (existsSync(join(trimmed, '.git'))) {
         setDirError('');
         setTargetDir(trimmed);
         setStep('confirm');
@@ -166,47 +171,99 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
               </Box>
             ) : prereqs ? (
               <>
-                <PrereqLine
-                  label="Git"
-                  found={prereqs.git.found}
-                  detail={prereqs.git.version ? `v${prereqs.git.version}` : undefined}
-                  hint={!prereqs.git.found ? 'winget install Git.Git' : undefined}
-                />
-                <PrereqLine
-                  label="Visual Studio"
-                  found={prereqs.cmake.found}
-                  detail={prereqs.cmake.vsEdition ? `${prereqs.cmake.vsEdition} 2022` : undefined}
-                  hint={!prereqs.cmake.found ? 'https://visualstudio.microsoft.com' : undefined}
-                />
-                <PrereqLine
-                  label="CUDA Toolkit"
-                  found={prereqs.cuda.found}
-                  detail={prereqs.cuda.version ? `v${prereqs.cuda.version}` : undefined}
-                  hint={!prereqs.cuda.found ? 'Optional: will build CPU-only without CUDA' : undefined}
-                  optional
-                />
-                <PrereqLine
-                  label="Node.js"
-                  found={prereqs.node.found && prereqs.node.supported}
-                  detail={prereqs.node.version
-                    ? `v${prereqs.node.version}${prereqs.node.nvmFound ? ' (NVM)' : ''}`
-                    : undefined}
-                  hint={!prereqs.node.found
-                    ? 'Optional: needed for web UI build'
-                    : !prereqs.node.supported
-                      ? `Requires Node.js ${NODE_WEB_UI_REQUIREMENT} for web UI build`
-                      : undefined}
-                  optional
-                />
-                <PrereqLine
-                  label="NVIDIA GPU"
-                  found={!!prereqs.gpu.name}
-                  detail={prereqs.gpu.name
-                    ? `${prereqs.gpu.name}${prereqs.gpu.arch ? ` (sm_${prereqs.gpu.arch})` : ''}`
-                    : undefined}
-                  hint={!prereqs.gpu.name ? 'Optional: will build CPU-only' : undefined}
-                  optional
-                />
+                {isMac() ? (
+                  <>
+                    <PrereqLine
+                      label="Git"
+                      found={prereqs.git.found}
+                      detail={prereqs.git.version ? `v${prereqs.git.version}` : undefined}
+                      hint={!prereqs.git.found ? 'xcode-select --install (or: brew install git)' : undefined}
+                    />
+                    <PrereqLine
+                      label="CMake"
+                      found={prereqs.cmake.found}
+                      detail={prereqs.cmake.found ? 'found' : undefined}
+                      hint={!prereqs.cmake.found ? 'brew install cmake' : undefined}
+                    />
+                    <PrereqLine
+                      label="Xcode CLT"
+                      found={!!prereqs.compiler?.found}
+                      detail={prereqs.compiler?.label ?? undefined}
+                      hint={!prereqs.compiler?.found ? 'xcode-select --install' : undefined}
+                    />
+                    <PrereqLine
+                      label="Node.js"
+                      found={prereqs.node.found && prereqs.node.supported}
+                      detail={prereqs.node.version
+                        ? `v${prereqs.node.version}${prereqs.node.nvmFound ? ' (NVM)' : ''}`
+                        : undefined}
+                      hint={!prereqs.node.found
+                        ? 'Optional: needed for web UI build (brew install node)'
+                        : !prereqs.node.supported
+                          ? `Requires Node.js ${NODE_WEB_UI_REQUIREMENT} for web UI build`
+                          : undefined}
+                      optional
+                    />
+                    <PrereqLine
+                      label="Metal GPU"
+                      found={!!prereqs.gpu.name}
+                      detail={prereqs.gpu.name ?? undefined}
+                      hint={!prereqs.gpu.name ? 'No Metal GPU detected; build will be CPU-only' : undefined}
+                      optional
+                    />
+                    <PrereqLine
+                      label="Homebrew"
+                      found={!!prereqs.brew?.found}
+                      detail={prereqs.brew?.found ? 'found' : undefined}
+                      hint={!prereqs.brew?.found ? 'Optional: needed to auto-install CMake/Node — https://brew.sh' : undefined}
+                      optional
+                    />
+                  </>
+                ) : (
+                  <>
+                    <PrereqLine
+                      label="Git"
+                      found={prereqs.git.found}
+                      detail={prereqs.git.version ? `v${prereqs.git.version}` : undefined}
+                      hint={!prereqs.git.found ? 'winget install Git.Git' : undefined}
+                    />
+                    <PrereqLine
+                      label="Visual Studio"
+                      found={prereqs.cmake.found}
+                      detail={prereqs.cmake.vsEdition ? `${prereqs.cmake.vsEdition} 2022` : undefined}
+                      hint={!prereqs.cmake.found ? 'https://visualstudio.microsoft.com' : undefined}
+                    />
+                    <PrereqLine
+                      label="CUDA Toolkit"
+                      found={prereqs.cuda.found}
+                      detail={prereqs.cuda.version ? `v${prereqs.cuda.version}` : undefined}
+                      hint={!prereqs.cuda.found ? 'Optional: will build CPU-only without CUDA' : undefined}
+                      optional
+                    />
+                    <PrereqLine
+                      label="Node.js"
+                      found={prereqs.node.found && prereqs.node.supported}
+                      detail={prereqs.node.version
+                        ? `v${prereqs.node.version}${prereqs.node.nvmFound ? ' (NVM)' : ''}`
+                        : undefined}
+                      hint={!prereqs.node.found
+                        ? 'Optional: needed for web UI build'
+                        : !prereqs.node.supported
+                          ? `Requires Node.js ${NODE_WEB_UI_REQUIREMENT} for web UI build`
+                          : undefined}
+                      optional
+                    />
+                    <PrereqLine
+                      label="NVIDIA GPU"
+                      found={!!prereqs.gpu.name}
+                      detail={prereqs.gpu.name
+                        ? `${prereqs.gpu.name}${prereqs.gpu.arch ? ` (sm_${prereqs.gpu.arch})` : ''}`
+                        : undefined}
+                      hint={!prereqs.gpu.name ? 'Optional: will build CPU-only' : undefined}
+                      optional
+                    />
+                  </>
+                )}
 
                 <Box marginTop={1}>
                   <Text dimColor>  CPU cores: {prereqs.cpuCores} (parallel build)</Text>
@@ -285,7 +342,7 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
               value={targetDir}
               onChange={setTargetDir}
               onSubmit={handleDirSubmit}
-              placeholder="%USERPROFILE%\\llama.cpp"
+              placeholder={isMac() ? '~/llama.cpp' : '%USERPROFILE%\\llama.cpp'}
             />
           </Box>
           {dirError && (
@@ -307,18 +364,30 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
           <Text color={theme.accent} bold>Confirm Installation</Text>
           <Box marginTop={1} flexDirection="column">
             <ConfirmRow label="Directory" value={targetDir} />
-            <ConfirmRow label="Build mode" value={prereqs.cuda.found ? 'CUDA (GPU accelerated)' : 'CPU-only'} />
-            {prereqs.gpu.name && (
-              <ConfirmRow label="GPU" value={`${prereqs.gpu.name}${prereqs.gpu.arch ? ` (sm_${prereqs.gpu.arch})` : ''}`} />
+            {isMac() ? (
+              <>
+                <ConfirmRow label="Build mode" value={prereqs.gpu.name ? 'Metal (GPU accelerated)' : 'CPU-only'} />
+                {prereqs.gpu.name && (
+                  <ConfirmRow label="GPU" value={prereqs.gpu.name} />
+                )}
+                <ConfirmRow label="Compiler" value={prereqs.compiler?.label ?? 'Apple clang'} />
+              </>
+            ) : (
+              <>
+                <ConfirmRow label="Build mode" value={prereqs.cuda.found ? 'CUDA (GPU accelerated)' : 'CPU-only'} />
+                {prereqs.gpu.name && (
+                  <ConfirmRow label="GPU" value={`${prereqs.gpu.name}${prereqs.gpu.arch ? ` (sm_${prereqs.gpu.arch})` : ''}`} />
+                )}
+                {prereqs.cuda.version && (
+                  <ConfirmRow label="CUDA" value={`v${prereqs.cuda.version}`} />
+                )}
+                <ConfirmRow label="Compiler" value={prereqs.cmake.vsEdition ? `VS 2022 ${prereqs.cmake.vsEdition}` : 'not found'} />
+              </>
             )}
-            {prereqs.cuda.version && (
-              <ConfirmRow label="CUDA" value={`v${prereqs.cuda.version}`} />
-            )}
-            <ConfirmRow label="Compiler" value={prereqs.cmake.vsEdition ? `VS 2022 ${prereqs.cmake.vsEdition}` : 'not found'} />
             <ConfirmRow label="Build jobs" value={`-j ${prereqs.cpuCores}`} />
           </Box>
           <Box marginTop={1}>
-            <Text dimColor>  This will clone ~500MB and compile llama-server.exe.</Text>
+            <Text dimColor>  This will clone ~500MB and compile {serverBinaryName()}.</Text>
           </Box>
           <Box>
             <Text dimColor>  Build may take 5-15 minutes depending on hardware.</Text>
@@ -375,10 +444,10 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
         <Box flexDirection="column" marginLeft={2} height={bodyHeight}>
           <Text color={theme.success} bold>Installation Complete!</Text>
           <Box marginTop={1}>
-            <Text>llama-server.exe built successfully at:</Text>
+            <Text>{serverBinaryName()} built successfully at:</Text>
           </Box>
           <Box>
-            <Text color={theme.accent}> {truncateText(`${targetDir}\\build\\bin\\Release`, lineWidth)}</Text>
+            <Text color={theme.accent}> {truncateText(isMac() ? join(targetDir, 'build', 'bin') : `${targetDir}\\build\\bin\\Release`, lineWidth)}</Text>
           </Box>
           <KeyHint hints={[{ key: '⏎', label: 'continue setup' }]} />
         </Box>

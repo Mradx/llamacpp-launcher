@@ -1,15 +1,15 @@
 # llamacpp-launcher
 
-> A terminal UI for configuring and launching the `llama.cpp` server (`llama-server.exe`) on Windows. It is self-bootstrapping: it can install its own runtime, clone and build llama.cpp for you, discover GGUF models, estimate memory fit against detected hardware, and build the server command line through an interactive set of screens.
+> A terminal UI for configuring and launching the `llama.cpp` server (`llama-server` on macOS, `llama-server.exe` on Windows) on **macOS (Apple Silicon, Metal)** and **Windows**. It is self-bootstrapping: it can install its own runtime, clone and build llama.cpp for you, discover GGUF models, estimate memory fit against detected hardware, and build the server command line through an interactive set of screens.
 
 You normally do not need to download or compile anything by hand. Run the launcher and it sets up what it needs.
 
 ## Features
 
-- **Self-bootstrapping runtime.** The Windows launcher (`llamacpp-launcher.bat`) detects or installs Node.js and Git automatically (via winget, with a direct-download fallback), then installs and starts the packaged app.
-- **Automated llama.cpp build.** The first-run wizard can clone llama.cpp from GitHub and compile `llama-server.exe` for you — including the web UI — without leaving the TUI.
-- **Prerequisite auto-install.** The install wizard detects Git, Visual Studio 2022 C++ Build Tools (CMake), CUDA Toolkit, Node.js, and an NVIDIA GPU, and can auto-install the missing critical ones (Git, Node.js, Visual Studio 2022 Build Tools).
-- **GPU-aware builds.** When an NVIDIA GPU and CUDA Toolkit are present, the build enables CUDA and targets the detected GPU architecture; otherwise it builds CPU-only.
+- **Self-bootstrapping runtime.** On **Windows**, the launcher (`llamacpp-launcher.bat`) detects or installs Node.js and Git automatically (via winget, with a direct-download fallback), then installs and starts the packaged app. On **macOS**, run it from source (see Installation); a standalone bootstrapper is not yet provided.
+- **Automated llama.cpp build.** The first-run wizard can clone llama.cpp from GitHub and compile the server for you — including the web UI — without leaving the TUI: `llama-server` with **Metal** on macOS (single-config CMake → `build/bin/`), or `llama-server.exe` with CUDA/CPU on Windows.
+- **Prerequisite auto-install.** The install wizard detects the toolchain and can auto-install the missing critical pieces. **macOS:** Xcode Command Line Tools, CMake, Git, Node.js, Homebrew, and a Metal GPU — auto-installs via `xcode-select --install` and Homebrew. **Windows:** Git, Visual Studio 2022 C++ Build Tools (CMake), CUDA Toolkit, Node.js, and an NVIDIA GPU — auto-installs Git, Node.js, and the VS 2022 Build Tools.
+- **GPU-aware builds.** On macOS the build enables **Metal**, and memory-fit accounts for Apple Silicon's **unified memory** (the GPU shares system RAM). On Windows, when an NVIDIA GPU and CUDA Toolkit are present the build enables CUDA and targets the detected GPU architecture; otherwise it builds CPU-only.
 - **Update in place.** An existing llama.cpp clone can be updated with `git pull` and rebuilt.
 - Interactive terminal UI built with [Ink](https://github.com/vadimdemedes/ink) and React.
 - Lists local GGUF models from the Hugging Face cache, and accepts Hugging Face repository references for remote models.
@@ -20,7 +20,21 @@ You normally do not need to download or compile anything by hand. Run the launch
 
 ## Prerequisites
 
-In the common case you only need **Windows** and an **internet connection**. The launcher and its wizard install everything else.
+In the common case you only need a supported OS (**macOS** on Apple Silicon, or **Windows**) and an **internet connection**. The launcher and its wizard install everything else.
+
+### macOS (Apple Silicon)
+
+| Component | Needed for | How it is obtained |
+| --- | --- | --- |
+| macOS on Apple Silicon | Metal-accelerated `llama-server`. | Host OS (Intel Macs work best-effort). |
+| Xcode Command Line Tools | The clang compiler used to build llama.cpp. | Auto-installed by the wizard via `xcode-select --install`. |
+| CMake | Configuring/compiling the build. | Auto-installed via Homebrew (`brew install cmake`). |
+| Git | Cloning and updating llama.cpp. | Ships with the Command Line Tools (or `brew install git`). |
+| Node.js `^20.19.0 \|\| ^22.13.0 \|\| >=24.0.0` | Running the launcher; building the web UI. | `brew install node`; required to run the launcher from source. |
+| Homebrew | Fetching CMake/Node for auto-install. | Optional but recommended — install from [brew.sh](https://brew.sh). |
+| Metal | GPU acceleration. | Built into macOS; nothing to install. |
+
+### Windows
 
 | Component | Needed for | How it is obtained |
 | --- | --- | --- |
@@ -31,11 +45,11 @@ In the common case you only need **Windows** and an **internet connection**. The
 | CUDA Toolkit + NVIDIA GPU | GPU-accelerated build. | Optional. Without them the build is CPU-only; these are detected but not auto-installed. |
 | winget | Fetching the auto-installable packages. | Used if present; a direct download fallback runs otherwise. |
 
-If you already have a compiled llama.cpp (`<dir>/build/bin/Release/llama-server.exe`), you can skip the build entirely and just point the launcher at that directory.
+If you already have a compiled llama.cpp, you can skip the build entirely and just point the launcher at that directory — `<dir>/build/bin/llama-server` on macOS, or `<dir>/build/bin/Release/llama-server.exe` on Windows.
 
 ## Installation
 
-### Recommended: run the bootstrapper
+### Windows: run the bootstrapper
 
 `llamacpp-launcher.bat` is a self-contained installer/launcher. Place a packaged `llamacpp-launcher-<version>.tgz` (produced by `npm run pack`) next to the `.bat` file and run it. The script:
 
@@ -44,6 +58,19 @@ If you already have a compiled llama.cpp (`<dir>/build/bin/Release/llama-server.
 3. Hands off to `cmd.exe` to run the interactive TUI.
 
 A log is written to `llamacpp-launcher.log` next to the `.bat` file. On first run, choose **"No, install it for me"** to have the wizard clone and build llama.cpp.
+
+### macOS: run from source
+
+There is no standalone bootstrapper for macOS yet, so run the launcher from a clone (requires Node.js — `brew install node`):
+
+```bash
+git clone <repository-url>
+cd llamacpp-launcher
+npm install
+npm run build && npm start   # or: npm run dev
+```
+
+On first run, choose **"No, install it for me"** to have the wizard clone and build llama.cpp with Metal, or **"Yes, I'll enter the path"** if you already built it (point it at the llama.cpp directory containing `build/bin/llama-server`).
 
 ### From source (developing the launcher itself)
 
@@ -89,7 +116,7 @@ Defaults live in `config.default.json`. On first run, a user configuration file 
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `llamaCppDir` | string | `""` (required) | Path to the llama.cpp root containing `build/bin/Release/llama-server.exe`. Set by the first-run wizard (entered manually or filled in after an automated build). |
+| `llamaCppDir` | string | `""` (required) | Path to the llama.cpp root. The server binary is located automatically: `build/bin/llama-server` (macOS, single-config) or `build/bin/Release/llama-server.exe` (Windows). Set by the first-run wizard (entered manually or filled in after an automated build). |
 | `hfCachePath` | string | `~/.cache/huggingface/hub` | Hugging Face cache directory scanned for local GGUF models. |
 | `host` | string | `0.0.0.0` | Host address passed to the server. |
 | `port` | number | `8484` | Server port (1–65535). |

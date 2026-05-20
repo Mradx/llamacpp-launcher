@@ -135,7 +135,8 @@ export function calculateFit(
   contextTokens: number,
   vramMb: number,
   ramMb: number,
-  metadata?: ModelMetadata
+  metadata?: ModelMetadata,
+  unified = false
 ): FitResult {
   const sizeMb = Math.floor(fileSizeBytes / (1024 * 1024));
   const effective = getEffectiveMetadata(metadata, fileSizeBytes);
@@ -144,18 +145,32 @@ export function calculateFit(
   const kvMb = kv.kvCacheMb;
   const totalNeededMb = sizeMb + kvMb + 1500;
 
-  const vramAvail = Math.floor(vramMb * 0.95);
-  const ramAvail = Math.floor(ramMb * 0.70);
-
   let fitStatus: FitStatus;
-  if (totalNeededMb <= vramAvail) {
-    fitStatus = 'GPU_OK';
-  } else if (totalNeededMb <= vramAvail + ramAvail) {
-    fitStatus = 'PARTIAL';
-  } else if (totalNeededMb <= ramMb) {
-    fitStatus = 'RAM_OK';
+  if (unified) {
+    // Apple Silicon: GPU and CPU share one memory pool. vramMb is the Metal
+    // working-set budget, so summing it with RAM (as the discrete path does)
+    // would double-count the same memory.
+    const gpuBudget = vramMb;
+    const ramAvail = Math.floor(ramMb * 0.90);
+    if (totalNeededMb <= gpuBudget) {
+      fitStatus = 'GPU_OK';
+    } else if (totalNeededMb <= ramAvail) {
+      fitStatus = 'PARTIAL';
+    } else {
+      fitStatus = 'TOO_BIG';
+    }
   } else {
-    fitStatus = 'TOO_BIG';
+    const vramAvail = Math.floor(vramMb * 0.95);
+    const ramAvail = Math.floor(ramMb * 0.70);
+    if (totalNeededMb <= vramAvail) {
+      fitStatus = 'GPU_OK';
+    } else if (totalNeededMb <= vramAvail + ramAvail) {
+      fitStatus = 'PARTIAL';
+    } else if (totalNeededMb <= ramMb) {
+      fitStatus = 'RAM_OK';
+    } else {
+      fitStatus = 'TOO_BIG';
+    }
   }
 
   return {

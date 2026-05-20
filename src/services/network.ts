@@ -1,22 +1,21 @@
-import { execSync } from 'node:child_process';
+import { networkInterfaces } from 'node:os';
 import type { NetworkInfo } from '../types.js';
+
+function detectLanIp(): string | null {
+  const ifaces = networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const ni of ifaces[name] ?? []) {
+      if (ni.family === 'IPv4' && !ni.internal && ni.address) {
+        return ni.address;
+      }
+    }
+  }
+  return null;
+}
 
 export async function detectNetwork(port: number): Promise<NetworkInfo> {
   const localUrl = `http://localhost:${port}`;
-  let lanIp: string | null = null;
-
-  try {
-    const result = execSync(
-      'powershell -NoProfile -Command "$c=New-Object Net.Sockets.UdpClient;$c.Connect(\'8.8.8.8\',80);($c.Client.LocalEndPoint).Address.ToString();$c.Close()"',
-      { encoding: 'utf-8', timeout: 5000, windowsHide: true }
-    ).trim();
-
-    if (result && result.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-      lanIp = result;
-    }
-  } catch {
-    // network detection failed
-  }
+  const lanIp = detectLanIp();
 
   return {
     lanIp,

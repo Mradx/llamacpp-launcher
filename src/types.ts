@@ -18,6 +18,7 @@ export interface HardwareInfo {
   cpuName: string;
   vramMb: number;
   ramMb: number;
+  unifiedMemory: boolean;
 }
 
 export interface NetworkInfo {

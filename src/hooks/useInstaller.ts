@@ -8,6 +8,7 @@ import {
   autoInstallPrereq,
   type PrerequisiteStatus,
   type InstallProgress,
+  type AutoInstallName,
 } from '../services/installer.js';
 
 export function useInstaller() {
@@ -66,7 +67,7 @@ export function useInstaller() {
     }
   }, [prereqs]);
 
-  const installPrereq = useCallback(async (name: 'Git' | 'Node.js' | 'Visual Studio 2022'): Promise<{ ok: boolean; error?: string }> => {
+  const installPrereq = useCallback(async (name: AutoInstallName): Promise<{ ok: boolean; error?: string }> => {
     try {
       const result = await autoInstallPrereq(name, setProgress);
       if (result.ok) detect();
@@ -91,7 +92,7 @@ export function useInstaller() {
         onStart(next);
 
         const result = await autoInstallPrereq(
-          next as 'Git' | 'Node.js' | 'Visual Studio 2022',
+          next as AutoInstallName,
           setProgress,
         );
         if (!result.ok) {
