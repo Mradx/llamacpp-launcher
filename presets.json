@@ -1,0 +1,32 @@
+{
+  "presets": [
+    {
+      "match": ["qwen3"],
+      "name": "Qwen 3.x",
+      "profiles": [
+        {
+          "name": "General Thinking",
+          "params": { "temp": 1.0, "top_k": 20, "top_p": 0.95, "min_p": 0 }
+        },
+        {
+          "name": "Coding",
+          "params": { "temp": 0.6, "top_k": 20, "top_p": 0.95, "min_p": 0 }
+        },
+        {
+          "name": "Non-thinking",
+          "params": { "temp": 0.7, "top_k": 20, "top_p": 0.80, "min_p": 0, "presence_penalty": 1.5 }
+        }
+      ]
+    },
+    {
+      "match": ["gemma-4", "gemma4"],
+      "name": "Gemma 4",
+      "profiles": [
+        {
+          "name": "Default",
+          "params": { "temp": 1.0, "top_k": 64, "top_p": 0.95, "min_p": 0 }
+        }
+      ]
+    }
+  ]
+}
