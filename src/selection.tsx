@@ -52,7 +52,7 @@ export function shouldShowQuantPickerForContext(
 function SelectionApp({ onDone }: SelectionAppProps) {
   const [configVersion, setConfigVersion] = useState(0);
   const config = useMemo(() => loadConfig(), [configVersion]);
-  const { hardware, network } = useHardware(config.port);
+  const { hardware, network } = useHardware(config.port, config.host);
   const { models, loading: modelsLoading, deleteModel, refreshModels } = useModels(config.hfCachePath);
   const { version, refresh: refreshVersion } = useVersion(config.llamaCppDir);
   const { exit } = useApp();

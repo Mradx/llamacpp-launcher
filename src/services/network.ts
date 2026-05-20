@@ -1,6 +1,11 @@
 import { networkInterfaces } from 'node:os';
 import type { NetworkInfo } from '../types.js';
 
+function isLanHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return normalized !== '127.0.0.1' && normalized !== 'localhost' && normalized !== '::1';
+}
+
 function detectLanIp(): string | null {
   const ifaces = networkInterfaces();
   for (const name of Object.keys(ifaces)) {
@@ -13,8 +18,17 @@ function detectLanIp(): string | null {
   return null;
 }
 
-export async function detectNetwork(port: number): Promise<NetworkInfo> {
+export async function detectNetwork(port: number, host: string): Promise<NetworkInfo> {
   const localUrl = `http://localhost:${port}`;
+
+  if (!isLanHost(host)) {
+    return {
+      lanIp: null,
+      lanUrl: null,
+      localUrl,
+    };
+  }
+
   const lanIp = detectLanIp();
 
   return {
