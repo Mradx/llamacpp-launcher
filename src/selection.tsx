@@ -39,6 +39,16 @@ function getModelIdentifier(model: ModelSelection): string {
   return model.repo + ' ' + (model.file || '') + ' ' + model.label;
 }
 
+export function shouldShowQuantPickerForContext(
+  model: ModelSelection | null,
+  nextContextSize: number,
+  quantSelectedContextSize?: number,
+): boolean {
+  if (model?.mode !== 'hf') return false;
+  if (!model.file) return true;
+  return quantSelectedContextSize !== undefined && quantSelectedContextSize !== nextContextSize;
+}
+
 function SelectionApp({ onDone }: SelectionAppProps) {
   const [configVersion, setConfigVersion] = useState(0);
   const config = useMemo(() => loadConfig(), [configVersion]);
@@ -57,6 +67,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [contextSize, setContextSize] = useState(defaultContext);
   const [modelSizeBytes, setModelSizeBytes] = useState<number | undefined>();
   const [modelMetadata, setModelMetadata] = useState<ModelSelection['metadata']>();
+  const [quantSelectedContextSize, setQuantSelectedContextSize] = useState<number | undefined>();
   const [gpuLayers, setGpuLayers] = useState(99);
   const [didShowLayerSelect, setDidShowLayerSelect] = useState(false);
   const [chatTemplateOverride, setChatTemplateOverride] = useState<string | undefined>(undefined);
@@ -93,15 +104,18 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     }
     setChatTemplateOverride(loadTemplateOverride(model));
     setSelectedModel(model);
+    setQuantSelectedContextSize(undefined);
     setContextSelectIndex(undefined);
     setScreen('context-select');
   };
 
   const handleContextSelect = (ctx: number) => {
     setContextSize(ctx);
-    if (selectedModel?.mode === 'hf' && !selectedModel.file) {
+    if (shouldShowQuantPickerForContext(selectedModel, ctx, quantSelectedContextSize)) {
       setQuantLoading(false);
-      setQuantPickerIndex(undefined);
+      if (selectedModel?.mode === 'hf' && !selectedModel.file) {
+        setQuantPickerIndex(undefined);
+      }
       setScreen('quant-picker');
     } else {
       goToLayersOrParams(ctx);
@@ -129,6 +143,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       setModelSizeBytes(file.sizeBytes);
       setModelMetadata(updated.metadata);
       setChatTemplateOverride(loadTemplateOverride(updated));
+      setQuantSelectedContextSize(contextSize);
       goToLayersOrParams(contextSize, file.sizeBytes);
     }
   };
