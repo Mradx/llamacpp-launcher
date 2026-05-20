@@ -291,6 +291,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           repo={selectedModel.repo}
           contextTokens={contextSize}
           hardware={hardware}
+          localModels={models}
           selecting={quantLoading}
           onSelect={handleQuantSelect}
           onBack={handleQuantBack}

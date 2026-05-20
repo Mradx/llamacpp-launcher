@@ -33,13 +33,14 @@ export function FitTable({ files, selectedIndex, firstIndex = 0 }: FitTableProps
     <Box flexDirection="column">
       <Box marginBottom={0}>
         <Box width={4}><Text bold dimColor> # </Text></Box>
-        <Box width={30}><Text bold dimColor>File</Text></Box>
-        <Box width={16}><Text bold dimColor>Quant</Text></Box>
+        <Box width={26}><Text bold dimColor>File</Text></Box>
+        <Box width={14}><Text bold dimColor>Quant</Text></Box>
         <Box width={10}><Text bold dimColor>Size</Text></Box>
         <Box width={10}><Text bold dimColor>Fit</Text></Box>
+        <Box width={9}><Text bold dimColor>Local</Text></Box>
       </Box>
       <Box marginBottom={0}>
-        <Text dimColor>{'─'.repeat(70)}</Text>
+        <Text dimColor>{'─'.repeat(73)}</Text>
       </Box>
       {files.map((file, i) => {
         const rowIndex = firstIndex + i;
@@ -55,14 +56,14 @@ export function FitTable({ files, selectedIndex, firstIndex = 0 }: FitTableProps
                 {isSelected ? '›' : ' '}{String(rowIndex + 1).padStart(2)}
               </Text>
             </Box>
-            <Box width={30}>
+            <Box width={26}>
               <Text color={isSelected ? 'white' : undefined} bold={isSelected}>
-                {truncateText(baseName, 28)}
+                {truncateText(baseName, 24)}
               </Text>
             </Box>
-            <Box width={16}>
+            <Box width={14}>
               <Text color={isSelected ? 'white' : undefined} bold={isSelected}>
-                {truncateText(quantLabel, 14)}
+                {truncateText(quantLabel, 12)}
               </Text>
             </Box>
             <Box width={10}>
@@ -72,6 +73,9 @@ export function FitTable({ files, selectedIndex, firstIndex = 0 }: FitTableProps
               <Text color={fitStatusColor(file.fitStatus)} bold={isSelected}>
                 {fitLabel(file.fitStatus)}
               </Text>
+            </Box>
+            <Box width={9}>
+              {file.downloaded && <Text color={theme.success} bold={isSelected}>cached</Text>}
             </Box>
           </Box>
         );

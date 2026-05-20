@@ -64,6 +64,7 @@ export interface HfFile {
   path: string;
   sizeBytes: number;
   sizeGb: number;
+  downloaded?: boolean;
   metadata?: ModelMetadata;
   kvCacheMb: number;
   totalNeededMb: number;

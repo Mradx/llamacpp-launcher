@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import { Header } from '../components/Header.js';
@@ -9,32 +9,77 @@ import { formatMb } from '../utils/format.js';
 import { clampLines, truncateText } from '../utils/terminal.js';
 import { useScrollableViewport } from '../hooks/useScrollableViewport.js';
 import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
-import type { HfFile, HardwareInfo } from '../types.js';
+import type { HfFile, HardwareInfo, LocalModel } from '../types.js';
 import { theme } from '../theme.js';
 
 interface QuantPickerProps {
   repo: string;
   contextTokens: number;
   hardware: HardwareInfo | null;
+  localModels: LocalModel[];
   selecting?: boolean;
   onSelect: (file: HfFile) => void;
   onBack: () => void;
 }
 
-export function QuantPicker({ repo, contextTokens, hardware, selecting, onSelect, onBack }: QuantPickerProps) {
+function fileNameFromPath(path: string): string {
+  return path.split('/').pop() || path;
+}
+
+function splitGroupKey(fileName: string): string {
+  return fileName.replace(/\.gguf$/i, '').replace(/-\d{5}-of-\d{5}$/i, '');
+}
+
+function getDownloadedFileNames(repo: string, localModels: LocalModel[]): Set<string> {
+  const lowerRepo = repo.toLowerCase();
+  return new Set(
+    localModels
+      .filter(model => model.repoId.toLowerCase() === lowerRepo)
+      .map(model => model.fileName),
+  );
+}
+
+function markDownloaded(files: HfFile[], downloadedFileNames: Set<string>): HfFile[] {
+  if (downloadedFileNames.size === 0) return files;
+  const downloadedGroupKeys = new Set(
+    [...downloadedFileNames].map(splitGroupKey),
+  );
+
+  return files.map(file => {
+    const fileName = fileNameFromPath(file.path);
+    const downloaded = downloadedFileNames.has(fileName)
+      || downloadedGroupKeys.has(splitGroupKey(fileName));
+    return downloaded ? { ...file, downloaded } : file;
+  });
+}
+
+function downloadedQuantSummary(files: HfFile[]): string {
+  return files
+    .filter(file => file.downloaded)
+    .map(file => file.metadata?.primaryQuantType || fileNameFromPath(file.path).replace(/\.gguf$/i, ''))
+    .filter(Boolean)
+    .join(', ');
+}
+
+export function QuantPicker({ repo, contextTokens, hardware, localModels, selecting, onSelect, onBack }: QuantPickerProps) {
   const [files, setFiles] = useState<HfFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { columns } = useTerminalViewport();
+  const downloadedFileNames = useMemo(
+    () => getDownloadedFileNames(repo, localModels),
+    [repo, localModels],
+  );
   const lineWidth = Math.max(24, columns - 6);
   const tableViewport = useScrollableViewport({
     itemCount: files.length,
     selectedIndex,
-    reservedRows: selecting ? 17 : 15,
+    reservedRows: selecting ? 18 : 16,
     minRows: 3,
   });
   const visibleFiles = files.slice(tableViewport.start, tableViewport.end);
+  const downloadedSummary = downloadedQuantSummary(files);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +95,7 @@ export function QuantPicker({ repo, contextTokens, hardware, selecting, onSelect
           hardware?.ramMb || 0
         );
         if (!cancelled) {
-          setFiles(result);
+          setFiles(markDownloaded(result, downloadedFileNames));
           setSelectedIndex(0);
           setLoading(false);
         }
@@ -64,7 +109,7 @@ export function QuantPicker({ repo, contextTokens, hardware, selecting, onSelect
 
     fetch();
     return () => { cancelled = true; };
-  }, [repo, contextTokens, hardware]);
+  }, [repo, contextTokens, hardware, downloadedFileNames]);
 
   useEffect(() => {
     setSelectedIndex(i => Math.min(i, Math.max(0, files.length - 1)));
@@ -94,6 +139,13 @@ export function QuantPicker({ repo, contextTokens, hardware, selecting, onSelect
         <Box>
           <Text dimColor>Repo: </Text>
           <Text bold>{truncateText(repo, Math.max(20, columns - 8))}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>Downloaded: </Text>
+          {downloadedSummary
+            ? <Text color={theme.success}>{truncateText(downloadedSummary, Math.max(20, columns - 14))}</Text>
+            : <Text dimColor>none</Text>
+          }
         </Box>
         {hardware && (
           <Box>
