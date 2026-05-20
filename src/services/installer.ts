@@ -1,5 +1,5 @@
-import { spawn, execSync, execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { spawn, execSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir, availableParallelism } from 'node:os';
 import type { SpawnOptions } from 'node:child_process';
@@ -45,6 +45,7 @@ const GPU_ARCH_MAP: Record<string, number> = {
 };
 
 export const NODE_WEB_UI_REQUIREMENT = '20.19+, 22.13+, or 24+';
+const WEB_UI_ASSETS = ['index.html', 'bundle.js', 'bundle.css', 'loading.html'];
 
 // ── Helpers ──
 
@@ -93,20 +94,83 @@ function resolveGitCommand(): string | null {
   return null;
 }
 
-function execGit(gitCmd: string, args: string[], cwd: string): string {
-  try {
-    return execFileSync(gitCmd, args, {
-      cwd,
-      encoding: 'utf-8',
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-  } catch (err) {
-    const stderr = err && typeof err === 'object' && 'stderr' in err
-      ? String((err as { stderr?: unknown }).stderr || '').trim()
-      : '';
-    throw new Error(stderr || `Git command failed: git ${args.join(' ')}`);
+function addUniquePath(paths: string[], seen: Set<string>, path: string | null | undefined): void {
+  if (!path) return;
+  const key = path.toLowerCase();
+  if (seen.has(key)) return;
+  seen.add(key);
+  paths.push(path);
+}
+
+function getNpmCandidates(): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  const addFromDir = (dir: string | null | undefined) => {
+    if (!dir) return;
+    addUniquePath(candidates, seen, join(dir, 'npm.cmd'));
+    addUniquePath(candidates, seen, join(dir, 'npm.exe'));
+  };
+
+  if (process.execPath.toLowerCase().endsWith('node.exe')) {
+    addFromDir(dirname(process.execPath));
   }
+
+  addFromDir(process.env.NVM_SYMLINK);
+
+  for (const dir of (process.env.PATH || '').split(';')) {
+    addFromDir(dir);
+  }
+
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const programFilesX86 = process.env['ProgramFiles(x86)'];
+  const localAppData = process.env.LOCALAPPDATA;
+
+  addFromDir(join(programFiles, 'nodejs'));
+  if (programFilesX86) addFromDir(join(programFilesX86, 'nodejs'));
+  if (localAppData) {
+    addFromDir(join(localAppData, 'Programs', 'nodejs'));
+    addFromDir(join(localAppData, 'Volta', 'bin'));
+  }
+
+  return candidates;
+}
+
+function resolveNpmCommand(): string | null {
+  refreshProcessPath();
+
+  for (const candidate of getNpmCandidates()) {
+    if (existsSync(candidate)) {
+      prependPath(dirname(candidate));
+      return candidate;
+    }
+  }
+
+  const whereResult = tryExec('where.exe npm.cmd');
+  const first = whereResult?.split(/\r?\n/).map(line => line.trim()).find(line => line && existsSync(line));
+  if (first) {
+    prependPath(dirname(first));
+    return first;
+  }
+
+  return null;
+}
+
+function withPrependedPath(env: NodeJS.ProcessEnv, prefix: string): NodeJS.ProcessEnv {
+  const next = { ...env };
+  const currentPath = next.Path || next.PATH || '';
+  delete next.PATH;
+  next.Path = prefix ? `${prefix};${currentPath}` : currentPath;
+  return next;
+}
+
+function webUiDistDir(llamaCppDir: string): string {
+  return join(llamaCppDir, 'build', 'tools', 'ui', 'dist');
+}
+
+function hasWebUiAssets(llamaCppDir: string): boolean {
+  const distDir = webUiDistDir(llamaCppDir);
+  return WEB_UI_ASSETS.every(asset => existsSync(join(distDir, asset)));
 }
 
 function prependPath(dir: string): void {
@@ -973,13 +1037,15 @@ export async function buildWebUI(
     return;
   }
 
-  if (process.execPath.toLowerCase().endsWith('node.exe')) {
-    prependPath(dirname(process.execPath));
-  }
+  const npmCmd = resolveNpmCommand();
+  const npmDir = npmCmd ? dirname(npmCmd) : null;
+  const nodeCmd = npmDir && existsSync(join(npmDir, 'node.exe'))
+    ? join(npmDir, 'node.exe')
+    : process.execPath.toLowerCase().endsWith('node.exe')
+    ? process.execPath
+    : 'node';
 
-  const nodeCheck = process.execPath.toLowerCase().endsWith('node.exe')
-    ? tryExec(`"${process.execPath}" --version`)
-    : tryExec('node --version');
+  const nodeCheck = tryExec(`"${nodeCmd}" --version`);
   if (!nodeCheck) {
     onProgress({ phase: 'build-ui', message: 'Node.js not found, skipping web UI build' });
     return;
@@ -995,12 +1061,36 @@ export async function buildWebUI(
     return;
   }
 
+  if (!npmCmd) {
+    onProgress({
+      phase: 'build-ui',
+      message: 'npm not found, skipping web UI build',
+      detail: 'Install Node.js with npm or ensure npm.cmd is next to node.exe',
+    });
+    return;
+  }
+
+  const npmEnv = npmDir
+    ? withPrependedPath(process.env, npmDir)
+    : withPrependedPath(process.env, '');
+  const npmInstallEnv: NodeJS.ProcessEnv = {
+    ...npmEnv,
+    npm_config_production: 'false',
+    npm_config_include: 'dev',
+    npm_config_omit: '',
+  };
+  delete npmInstallEnv.NODE_ENV;
+
+  const npmRunEnv: NodeJS.ProcessEnv = {
+    ...withPrependedPath(npmEnv, join(uiDir, 'node_modules', '.bin')),
+  };
+
   onProgress({ phase: 'build-ui', message: 'Installing web UI dependencies...' });
 
   await spawnWithProgress(
-    'npm',
-    ['install'],
-    { cwd: uiDir, shell: true },
+    npmCmd,
+    ['install', '--include=dev', '--no-audit', '--no-fund'],
+    { cwd: uiDir, shell: true, env: npmInstallEnv },
     (line) => {
       onProgress({ phase: 'build-ui', message: 'npm install...', detail: line });
     },
@@ -1008,14 +1098,23 @@ export async function buildWebUI(
 
   onProgress({ phase: 'build-ui', message: 'Building web UI...' });
 
+  const viteCli = join(uiDir, 'node_modules', 'vite', 'bin', 'vite.js');
+  if (!existsSync(viteCli)) {
+    throw new Error(`vite was not installed: ${viteCli}`);
+  }
+
   await spawnWithProgress(
-    'npm',
-    ['run', 'build'],
-    { cwd: uiDir, shell: true },
+    nodeCmd,
+    [viteCli, 'build'],
+    { cwd: uiDir, env: npmRunEnv },
     (line) => {
       onProgress({ phase: 'build-ui', message: 'Building UI...', detail: line });
     },
   );
+
+  if (!hasWebUiAssets(llamaCppDir)) {
+    throw new Error(`Web UI build did not produce required assets in ${webUiDistDir(llamaCppDir)}`);
+  }
 }
 
 export async function cmakeConfigure(
@@ -1042,12 +1141,41 @@ export async function cmakeConfigure(
   const buildDir = join(llamaCppDir, 'build');
   if (existsSync(buildDir)) {
     onProgress({ phase: 'cmake-configure', message: 'Cleaning old build cache...' });
-    await spawnWithProgress(
-      'powershell',
-      ['-NoProfile', '-Command', `Remove-Item -Recurse -Force "${buildDir}"`],
-      {},
-      () => {},
-    );
+    const uiDistDir = webUiDistDir(llamaCppDir);
+    const preservedUiDistDir = join(llamaCppDir, `.llamacpp-launcher-ui-dist-${Date.now()}`);
+    let preservedUiDist = false;
+
+    if (existsSync(uiDistDir) && hasWebUiAssets(llamaCppDir)) {
+      try {
+        rmSync(preservedUiDistDir, { recursive: true, force: true });
+        renameSync(uiDistDir, preservedUiDistDir);
+        preservedUiDist = true;
+      } catch {
+        preservedUiDist = false;
+      }
+    }
+
+    let removeError: unknown = null;
+    try {
+      await spawnWithProgress(
+        'powershell',
+        ['-NoProfile', '-Command', `Remove-Item -Recurse -Force "${buildDir}"`],
+        {},
+        () => {},
+      );
+    } catch (err) {
+      removeError = err;
+    }
+
+    if (preservedUiDist) {
+      mkdirSync(dirname(uiDistDir), { recursive: true });
+      renameSync(preservedUiDistDir, uiDistDir);
+      onProgress({ phase: 'cmake-configure', message: 'Preserved web UI assets...' });
+    }
+
+    if (removeError) {
+      throw removeError;
+    }
   }
 
   const args = [
@@ -1150,18 +1278,15 @@ export async function runFullInstall(
 
 // ── Update Functions ──
 
-export async function updateLlamaCpp(
+export async function pullAndRebuild(
   llamaCppDir: string,
   prereqs: PrerequisiteStatus,
   onProgress: ProgressCallback,
-): Promise<boolean> {
+): Promise<void> {
   const gitCmd = resolveGitCommand();
   if (!gitCmd) {
     throw new Error('Git not found. Install Git or add git.exe to PATH, then reopen the launcher.');
   }
-
-  onProgress({ phase: 'clone', message: 'Checking current revision...' });
-  const beforePull = execGit(gitCmd, ['rev-parse', 'HEAD'], llamaCppDir);
 
   onProgress({ phase: 'clone', message: 'Pulling latest changes...' });
 
@@ -1174,19 +1299,11 @@ export async function updateLlamaCpp(
     },
   );
 
-  const afterPull = execGit(gitCmd, ['rev-parse', 'HEAD'], llamaCppDir);
-
-  if (afterPull === beforePull) {
-    onProgress({ phase: 'done', message: 'Already up to date.' });
-    return false;
-  }
-
   await rebuildLlamaCpp(llamaCppDir, prereqs, onProgress);
   onProgress({ phase: 'done', message: 'Update complete!' });
-  return true;
 }
 
-export async function rebuildLlamaCpp(
+async function rebuildLlamaCpp(
   llamaCppDir: string,
   prereqs: PrerequisiteStatus,
   onProgress: ProgressCallback,
@@ -1194,6 +1311,4 @@ export async function rebuildLlamaCpp(
   await buildWebUI(llamaCppDir, onProgress);
   await cmakeConfigure(llamaCppDir, prereqs, onProgress);
   await cmakeBuild(llamaCppDir, prereqs, onProgress);
-
-  onProgress({ phase: 'done', message: 'Rebuild complete!' });
 }

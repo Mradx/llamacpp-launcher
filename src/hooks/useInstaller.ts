@@ -4,8 +4,7 @@ import {
   getCriticalMissing,
   canAutoInstall,
   runFullInstall,
-  updateLlamaCpp,
-  rebuildLlamaCpp,
+  pullAndRebuild,
   autoInstallPrereq,
   type PrerequisiteStatus,
   type InstallProgress,
@@ -57,24 +56,8 @@ export function useInstaller() {
     setProgress(null);
     setCompleted(false);
     try {
-      const changed = await updateLlamaCpp(llamaCppDir, prereqs, setProgress);
-      setSourceChanged(prev => prev || changed);
-      setCompleted(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setInstalling(false);
-    }
-  }, [prereqs]);
-
-  const startRebuild = useCallback(async (llamaCppDir: string) => {
-    if (!prereqs) return;
-    setInstalling(true);
-    setError(null);
-    setProgress(null);
-    setCompleted(false);
-    try {
-      await rebuildLlamaCpp(llamaCppDir, prereqs, setProgress);
+      await pullAndRebuild(llamaCppDir, prereqs, setProgress);
+      setSourceChanged(true);
       setCompleted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -131,7 +114,6 @@ export function useInstaller() {
     sourceChanged,
     startInstall,
     startUpdate,
-    startRebuild,
     installPrereq,
     installAllMissing,
     redetect: detect,

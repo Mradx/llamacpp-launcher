@@ -46,10 +46,9 @@ const FIELDS: FieldDef[] = [
 const STATE_FILES = ['config.json', 'params-history.json', 'template-overrides.json'];
 
 const UPDATE_INDEX = FIELDS.length;
-const REBUILD_INDEX = FIELDS.length + 1;
-const SAVE_INDEX = FIELDS.length + 2;
-const DISCARD_INDEX = FIELDS.length + 3;
-const TOTAL_ITEMS = FIELDS.length + 4; // fields + update + rebuild + save + discard
+const SAVE_INDEX = FIELDS.length + 1;
+const DISCARD_INDEX = FIELDS.length + 2;
+const TOTAL_ITEMS = FIELDS.length + 3; // fields + update + save + discard
 const TABS_INDEX = -1;
 
 // Render both tabs at the same height. Ink decides between an in-place
@@ -59,11 +58,10 @@ const TABS_INDEX = -1;
 // other fits, ink flips between those two modes and log-update's cached line
 // count goes stale, which leaves the screen frozen on the previous tab. A
 // shared min-height keeps the frame height constant across both tabs and also
-// absorbs the extra line that the "Already up to date." / status messages add,
-// so finishing an update never changes the height either.
+// absorbs the extra status line, so finishing an update never changes the
+// height either.
 const TAB_BODY_HEIGHT = 21;
 
-type InstallAction = 'update' | 'rebuild';
 type SettingsTab = 'config' | 'info';
 type StateFileInfo = ReturnType<typeof getStateFileInfo>;
 
@@ -143,11 +141,9 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
   const [editValue, setEditValue] = useState('');
   const [pathStatus, setPathStatus] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
-  const [activeAction, setActiveAction] = useState<InstallAction | null>(null);
   const [stateFiles, setStateFiles] = useState<StateFileInfo[]>([]);
   const {
     startUpdate,
-    startRebuild,
     progress: installProgress,
     installing: installRunning,
     error: installError,
@@ -297,14 +293,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
       } else if (selectedIndex === UPDATE_INDEX) {
         const dir = String(values.llamaCppDir);
         if (dir) {
-          setActiveAction('update');
           startUpdate(dir);
-        }
-      } else if (selectedIndex === REBUILD_INDEX) {
-        const dir = String(values.llamaCppDir);
-        if (dir) {
-          setActiveAction('rebuild');
-          startRebuild(dir);
         }
       } else if (selectedIndex === SAVE_INDEX) {
         handleSave();
@@ -409,21 +398,21 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
                 {selectedIndex === UPDATE_INDEX ? ' › ' : '   '}
               </Text>
               <Text color={selectedIndex === UPDATE_INDEX ? theme.accent : theme.textMuted} bold={selectedIndex === UPDATE_INDEX}>
-                Update llama.cpp (git pull)
+                Update llama.cpp (git pull + rebuild)
               </Text>
-              {activeAction === 'update' && installRunning && (
+              {installRunning && (
                 <Box marginLeft={1}>
                   <Text color={theme.accent}><Spinner type="dots" /></Text>
                   <Text dimColor> {truncateText(installProgress?.message || 'Updating...', maxLineWidth - 28)}</Text>
                 </Box>
               )}
             </Box>
-            {activeAction === 'update' && installCompleted && (
+            {installCompleted && (
               <Box marginLeft={3}>
                 <Text color={theme.success}> {truncateText(installProgress?.message || 'Update complete!', maxLineWidth - 6)}</Text>
               </Box>
             )}
-            {activeAction === 'update' && installError && (
+            {installError && (
               <Box marginLeft={3} flexDirection="column">
                 {clampLines(installError, 4, maxLineWidth - 6).map((line, i) => (
                   <Text key={i} color={theme.danger}> {line}</Text>
@@ -431,34 +420,6 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
               </Box>
             )}
           </Box>
-
-          <Box marginTop={1}>
-            <Text color={selectedIndex === REBUILD_INDEX ? theme.marker : undefined}>
-              {selectedIndex === REBUILD_INDEX ? ' › ' : '   '}
-            </Text>
-            <Text color={selectedIndex === REBUILD_INDEX ? theme.accent : theme.textMuted} bold={selectedIndex === REBUILD_INDEX}>
-              Rebuild llama.cpp
-            </Text>
-            {activeAction === 'rebuild' && installRunning && (
-              <Box marginLeft={1}>
-                <Text color={theme.accent}><Spinner type="dots" /></Text>
-                <Text dimColor> {truncateText(installProgress?.message || 'Rebuilding...', maxLineWidth - 28)}</Text>
-              </Box>
-            )}
-          </Box>
-          {activeAction === 'rebuild' && installCompleted && (
-            <Box marginLeft={3}>
-              <Text color={theme.success}> {truncateText(installProgress?.message || 'Rebuild complete!', maxLineWidth - 6)}</Text>
-            </Box>
-          )}
-          {activeAction === 'rebuild' && installError && (
-            <Box marginLeft={3} flexDirection="column">
-              {clampLines(installError, 4, maxLineWidth - 6).map((line, i) => (
-                <Text key={i} color={theme.danger}> {line}</Text>
-              ))}
-            </Box>
-          )}
-
           <Box marginTop={1}>
             <Text color={selectedIndex === SAVE_INDEX ? theme.marker : undefined}>
               {selectedIndex === SAVE_INDEX ? ' › ' : '   '}
