@@ -6,7 +6,7 @@ You normally do not need to download or compile anything by hand. Run the launch
 
 ## Features
 
-- **Self-bootstrapping runtime.** On **Windows**, the launcher (`llamacpp-launcher.bat`) detects or installs Node.js and Git automatically (via winget, with a direct-download fallback), then installs and starts the packaged app. On **macOS**, run it from source (see Installation); a standalone bootstrapper is not yet provided.
+- **Self-bootstrapping runtime.** A double-clickable launcher detects or installs Node.js and Git automatically, then installs (or updates) and starts the packaged app. On **Windows** this is `llamacpp-launcher.bat` (Node.js + Git via winget, with a direct-download fallback); on **macOS** it is `llamacpp-launcher.command` (Node.js via Homebrew, falling back to the official build from nodejs.org; Git via Homebrew or the Xcode Command Line Tools).
 - **Automated llama.cpp build.** The first-run wizard can clone llama.cpp from GitHub and compile the server for you — including the web UI — without leaving the TUI: `llama-server` with **Metal** on macOS (single-config CMake → `build/bin/`), or `llama-server.exe` with CUDA/CPU on Windows.
 - **Prerequisite auto-install.** The install wizard detects the toolchain and can auto-install the missing critical pieces. **macOS:** Xcode Command Line Tools, CMake, Git, Node.js, Homebrew, and a Metal GPU — auto-installs via `xcode-select --install` and Homebrew. **Windows:** Git, Visual Studio 2022 C++ Build Tools (CMake), CUDA Toolkit, Node.js, and an NVIDIA GPU — auto-installs Git, Node.js, and the VS 2022 Build Tools.
 - **GPU-aware builds.** On macOS the build enables **Metal**, and memory-fit accounts for Apple Silicon's **unified memory** (the GPU shares system RAM). On Windows, when an NVIDIA GPU and CUDA Toolkit are present the build enables CUDA and targets the detected GPU architecture; otherwise it builds CPU-only.
@@ -29,8 +29,8 @@ In the common case you only need a supported OS (**macOS** on Apple Silicon, or 
 | macOS on Apple Silicon | Metal-accelerated `llama-server`. | Host OS (Intel Macs work best-effort). |
 | Xcode Command Line Tools | The clang compiler used to build llama.cpp. | Auto-installed by the wizard via `xcode-select --install`. |
 | CMake | Configuring/compiling the build. | Auto-installed via Homebrew (`brew install cmake`). |
-| Git | Cloning and updating llama.cpp. | Ships with the Command Line Tools (or `brew install git`). |
-| Node.js `^20.19.0 \|\| ^22.13.0 \|\| >=24.0.0` | Running the launcher; building the web UI. | `brew install node`; required to run the launcher from source. |
+| Git | Cloning and updating llama.cpp. | Auto-installed by the bootstrapper/wizard via Homebrew or the Xcode Command Line Tools. |
+| Node.js `^20.19.0 \|\| ^22.13.0 \|\| >=24.0.0` | Running the launcher; building the web UI. | Auto-installed by the bootstrapper (Homebrew, or a direct download from nodejs.org) and the wizard. |
 | Homebrew | Fetching CMake/Node for auto-install. | Optional but recommended — install from [brew.sh](https://brew.sh). |
 | Metal | GPU acceleration. | Built into macOS; nothing to install. |
 
@@ -59,18 +59,24 @@ If you already have a compiled llama.cpp, you can skip the build entirely and ju
 
 A log is written to `llamacpp-launcher.log` next to the `.bat` file. On first run, choose **"No, install it for me"** to have the wizard clone and build llama.cpp.
 
-### macOS: run from source
+### macOS: run the bootstrapper
 
-There is no standalone bootstrapper for macOS yet, so run the launcher from a clone (requires Node.js — `brew install node`):
+`llamacpp-launcher.command` is the macOS counterpart to the `.bat` — a self-contained installer/launcher. Place a packaged `llamacpp-launcher-<version>.tgz` (produced by `npm run pack`) next to it, then double-click it in Finder (it opens in Terminal) or run it from a shell:
 
 ```bash
-git clone <repository-url>
-cd llamacpp-launcher
-npm install
-npm run build && npm start   # or: npm run dev
+chmod +x llamacpp-launcher.command   # first time only, if the executable bit was lost
+./llamacpp-launcher.command
 ```
 
-On first run, choose **"No, install it for me"** to have the wizard clone and build llama.cpp with Metal, or **"Yes, I'll enter the path"** if you already built it (point it at the llama.cpp directory containing `build/bin/llama-server`).
+The script:
+
+1. Locates or installs a supported Node.js runtime (Homebrew if available, otherwise the official build from nodejs.org) and Git (Homebrew or the Xcode Command Line Tools).
+2. Installs (or updates) the packaged app into a per-user prefix under `~/.llamacpp-launcher`.
+3. Starts the interactive TUI.
+
+A log is written to `llamacpp-launcher.log` next to the `.command` file. Run `./llamacpp-launcher.command --self-test` to check the script without installing anything. On first run, choose **"No, install it for me"** to have the wizard clone and build llama.cpp with Metal, or **"Yes, I'll enter the path"** if you already built it (point it at the llama.cpp directory containing `build/bin/llama-server`).
+
+To work on the launcher itself instead of running the packaged build, run it from a clone — see [From source](#from-source-developing-the-launcher-itself) below.
 
 ### From source (developing the launcher itself)
 
@@ -166,6 +172,7 @@ llamacpp-launcher/
 ├── config.default.json        # Default configuration
 ├── presets.json               # Sampling parameter presets
 ├── llamacpp-launcher.bat       # Windows bootstrapper / installer
+├── llamacpp-launcher.command   # macOS bootstrapper / installer
 ├── package.json
 └── tsconfig.json
 ```
