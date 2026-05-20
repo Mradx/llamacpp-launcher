@@ -125,7 +125,6 @@ function Write-Header {
   Write-Ui ''
   Write-Ui '============================================================' Cyan
   Write-Ui ' LLAMACPP-LAUNCHER' White
-  Write-Ui ' Production bootstrapper for the llama.cpp launcher' DarkGray
   Write-Ui '============================================================' Cyan
   Write-Ui ''
   Write-KeyValue 'Script' $script:BatchPath
