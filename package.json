@@ -1,6 +1,6 @@
 {
   "name": "llamacpp-launcher",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Terminal UI launcher for llama.cpp server",
   "license": "MIT",
   "type": "module",
