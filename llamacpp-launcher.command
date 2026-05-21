@@ -495,6 +495,7 @@ launch_app() {
 
   cd "$APP_DIR" 2>/dev/null || true
   log "Launching: $NODE $APP_ENTRY"
+  [ -t 1 ] && clear 2>/dev/null || true
 
   # Let Ctrl+C reach the app (which resets INT to default on exec) without killing
   # this script, so the closing summary/pause still runs.
