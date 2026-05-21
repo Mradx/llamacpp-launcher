@@ -12,10 +12,12 @@ import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { clampLines, truncateText } from '../utils/terminal.js';
 import { isMac } from '../utils/platform.js';
 import type { StoredConfig } from '../types.js';
+import type { VersionInfo } from '../services/llamacpp-version.js';
 import { theme } from '../theme.js';
 
 interface SettingsScreenProps {
   currentConfig: StoredConfig;
+  llamaCppVersion?: VersionInfo | null;
   onDone: (saved: boolean, updated?: boolean) => void;
 }
 
@@ -149,7 +151,36 @@ function getStateFileInfo(fileName: string) {
   }
 }
 
-export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
+function getUpdateActionLabel(version?: VersionInfo | null, forceRebuild = false): string {
+  if (forceRebuild || (version?.remote && version.buildsBehind === 0)) {
+    return 'Force rebuild llama.cpp (git pull + rebuild)';
+  }
+
+  return 'Update llama.cpp (git pull + rebuild)';
+}
+
+function getUpdateStatus(version?: VersionInfo | null): { text: string; color?: string; dim?: boolean } | null {
+  if (!version?.local) return null;
+
+  if (!version.remote) {
+    return { text: 'Latest llama.cpp release check unavailable', dim: true };
+  }
+
+  if (version.buildsBehind === 0) {
+    return { text: `llama.cpp is up to date (${version.remote.tag})`, color: theme.success };
+  }
+
+  if (version.buildsBehind === null) {
+    return { text: `Latest llama.cpp release is ${version.remote.tag}; build distance unknown`, color: theme.warning };
+  }
+
+  return {
+    text: `Update available: ${version.buildsBehind} builds behind latest ${version.remote.tag}`,
+    color: version.buildsBehind > 100 ? theme.danger : theme.warning,
+  };
+}
+
+export function SettingsScreen({ currentConfig, llamaCppVersion, onDone }: SettingsScreenProps) {
   const { rows, columns } = useTerminalViewport();
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(TABS_INDEX);
@@ -181,6 +212,8 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
   const dataRoot = getDataRoot();
   const bodyHeight = Math.max(8, rows - 8);
   const maxLineWidth = Math.max(24, columns - 8);
+  const updateActionLabel = getUpdateActionLabel(llamaCppVersion, installCompleted);
+  const updateStatus = installCompleted ? null : getUpdateStatus(llamaCppVersion);
 
   useEffect(() => {
     if (activeTab === 'info') {
@@ -418,7 +451,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
                 {selectedIndex === UPDATE_INDEX ? ' › ' : '   '}
               </Text>
               <Text color={selectedIndex === UPDATE_INDEX ? theme.accent : theme.textMuted} bold={selectedIndex === UPDATE_INDEX}>
-                Update llama.cpp (git pull + rebuild)
+                {updateActionLabel}
               </Text>
               {installRunning && (
                 <Box marginLeft={1}>
@@ -427,6 +460,13 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
                 </Box>
               )}
             </Box>
+            {updateStatus && (
+              <Box marginLeft={3}>
+                <Text color={updateStatus.color} dimColor={updateStatus.dim}>
+                  {truncateText(` ${updateStatus.text}`, maxLineWidth - 6)}
+                </Text>
+              </Box>
+            )}
             {installCompleted && (
               <Box marginLeft={3}>
                 <Text color={theme.success}> {truncateText(installProgress?.message || 'Update complete!', maxLineWidth - 6)}</Text>

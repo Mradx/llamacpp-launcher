@@ -350,6 +350,11 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     process.exit(0);
   };
 
+  const handleRefresh = () => {
+    refreshModels();
+    refreshVersion();
+  };
+
   const handleSettings = () => {
     setSettingsConfig(loadStoredConfig());
     setShowSettings(true);
@@ -380,6 +385,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     return (
       <SettingsScreen
         currentConfig={settingsConfig}
+        llamaCppVersion={version}
         onDone={handleSettingsDone}
       />
     );
@@ -396,7 +402,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           onSelect={handleModelSelect}
           onRouter={handleRouter}
           onDelete={deleteModel}
-          onRefresh={refreshModels}
+          onRefresh={handleRefresh}
           onQuit={handleQuit}
           onSettings={handleSettings}
           initialSelectedIndex={modelSelectIndex}
