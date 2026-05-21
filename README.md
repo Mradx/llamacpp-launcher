@@ -4,6 +4,10 @@
 
 You normally do not need to download or compile anything by hand. Run the launcher and it sets up what it needs.
 
+<p align="center">
+  <img src="docs/images/main-screen.png" alt="llamacpp-launcher local models screen" width="900">
+</p>
+
 ## Features
 
 - **Self-bootstrapping runtime.** A double-clickable launcher detects or installs Node.js and Git automatically, then installs (or updates) and starts the packaged app. On **Windows** this is `llamacpp-launcher.bat` (Node.js + Git via winget, with a direct-download fallback); on **macOS** it is `llamacpp-launcher.command` (Node.js via Homebrew, falling back to the official build from nodejs.org; Git via Homebrew or the Xcode Command Line Tools).
