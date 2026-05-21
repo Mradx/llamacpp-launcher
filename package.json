@@ -20,6 +20,7 @@
     "build:app": "tsc && node scripts/ensure-shebang.cjs",
     "build": "node scripts/bump-version.cjs && npm run build:app",
     "pack": "node scripts/bump-version.cjs && npm run build:app && npm pack --ignore-scripts",
+    "pack:no-bump": "npm run build:app && npm pack --ignore-scripts",
     "prepack": "node scripts/bump-version.cjs",
     "postpack": "node scripts/rename-packed-tarball.cjs",
     "prepare": "npm run build:app",
