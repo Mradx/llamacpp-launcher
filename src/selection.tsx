@@ -9,6 +9,16 @@ import { detectMtp } from './services/mtp.js';
 import { getProfiles, findPreset } from './services/presets.js';
 import { saveToHistory } from './services/params-history.js';
 import { loadTemplateOverride, saveTemplateOverride } from './services/template-overrides.js';
+import {
+  loadModelPreferences,
+  resolveContextPreferenceIndex,
+  saveModelContextPreference,
+  saveModelGpuLayerPreference,
+  saveModelSamplingPreference,
+  type GpuLayerPreference,
+  type ModelPreferences,
+  type SamplingPreference,
+} from './services/model-preferences.js';
 import { calculateKvCache, estimateModelMetadata, getEffectiveMetadata } from './services/memory.js';
 import { useVersion } from './hooks/useVersion.js';
 import { fetchGgufMetadata } from './services/gguf.js';
@@ -79,6 +89,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [layerSelectIndex, setLayerSelectIndex] = useState<number | undefined>();
   const [paramsSelectIndex, setParamsSelectIndex] = useState<number | undefined>();
   const [customParamsIndex, setCustomParamsIndex] = useState<number | undefined>();
+  const [modelPreferences, setModelPreferences] = useState<ModelPreferences>({});
 
   const handleModelSelect = async (model: ModelSelection) => {
     if (model.mode === 'router') return;
@@ -105,14 +116,22 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         setModelMetadata(model.metadata);
       }
     }
+    const preferences = loadModelPreferences(model);
     setChatTemplateOverride(loadTemplateOverride(model));
     setSelectedModel(model);
+    setModelPreferences(preferences);
     setQuantSelectedContextSize(undefined);
-    setContextSelectIndex(undefined);
+    setContextSelectIndex(resolveContextPreferenceIndex(config.contextOptions, preferences.contextSize));
+    setLayerSelectIndex(undefined);
+    setParamsSelectIndex(undefined);
     setScreen('context-select');
   };
 
   const handleContextSelect = (ctx: number) => {
+    if (selectedModel) {
+      saveModelContextPreference(selectedModel, ctx);
+      setModelPreferences(prev => ({ ...prev, contextSize: ctx }));
+    }
     setContextSize(ctx);
     if (shouldShowQuantPickerForContext(selectedModel, ctx, quantSelectedContextSize)) {
       setQuantLoading(false);
@@ -143,6 +162,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         updated.metadata = metadata;
       }
       setSelectedModel(updated);
+      saveModelContextPreference(updated, contextSize);
+      setModelPreferences(loadModelPreferences(updated));
       setModelSizeBytes(file.sizeBytes);
       setModelMetadata(updated.metadata);
       setChatTemplateOverride(loadTemplateOverride(updated));
@@ -165,7 +186,11 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     setScreen('params-select');
   };
 
-  const handleLayerSelect = (layers: number) => {
+  const handleLayerSelect = (layers: number, preference: GpuLayerPreference) => {
+    if (selectedModel) {
+      saveModelGpuLayerPreference(selectedModel, preference);
+      setModelPreferences(prev => ({ ...prev, gpuLayers: preference }));
+    }
     setGpuLayers(layers);
     setParamsSelectIndex(undefined);
     setScreen('params-select');
@@ -197,26 +222,48 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     }
   };
 
-  const handleParamsSelect = (params: ModelParams | null) => {
+  const handleParamsSelect = (params: ModelParams | null, preference: SamplingPreference) => {
+    if (selectedModel) {
+      saveModelSamplingPreference(selectedModel, preference);
+      setModelPreferences(prev => ({ ...prev, sampling: preference }));
+    }
     finalize(params, []);
   };
 
   const handleCustomConfirm = (params: ModelParams) => {
     const hasParams = Object.keys(params).length > 0;
+    const preference: SamplingPreference = hasParams
+      ? { type: 'custom', params }
+      : { type: 'defaults' };
     if (hasParams) {
       saveToHistory({ type: 'custom', params });
+    }
+    if (selectedModel) {
+      saveModelSamplingPreference(selectedModel, preference);
+      setModelPreferences(prev => ({ ...prev, sampling: preference }));
     }
     finalize(hasParams ? params : null, []);
   };
 
   const handleExpertConfirm = (rawArgs: string[]) => {
+    const preference: SamplingPreference = rawArgs.length > 0
+      ? { type: 'expert', rawArgs }
+      : { type: 'defaults' };
     if (rawArgs.length > 0) {
       saveToHistory({ type: 'expert', rawArgs, raw: rawArgs.join(' ') });
+    }
+    if (selectedModel) {
+      saveModelSamplingPreference(selectedModel, preference);
+      setModelPreferences(prev => ({ ...prev, sampling: preference }));
     }
     finalize(null, rawArgs);
   };
 
-  const handleExpertDirect = (rawArgs: string[]) => {
+  const handleExpertDirect = (rawArgs: string[], preference: SamplingPreference) => {
+    if (selectedModel) {
+      saveModelSamplingPreference(selectedModel, preference);
+      setModelPreferences(prev => ({ ...prev, sampling: preference }));
+    }
     finalize(null, rawArgs);
   };
 
@@ -384,6 +431,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           onSelect={handleLayerSelect}
           onBack={goBackFromLayers}
           initialSelectedIndex={layerSelectIndex}
+          initialGpuPreference={modelPreferences.gpuLayers}
           onSelectedIndexChange={setLayerSelectIndex}
         />
       )}
@@ -404,6 +452,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           onTemplate={() => setScreen('chat-template')}
           onBack={goBackFromParams}
           initialSelectedIndex={paramsSelectIndex}
+          initialSamplingPreference={modelPreferences.sampling}
           onSelectedIndexChange={setParamsSelectIndex}
         />
       )}

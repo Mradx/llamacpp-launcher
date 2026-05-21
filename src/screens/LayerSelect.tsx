@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { calculateLayerSplit, calculateMaxGpuLayers } from '../services/memory.js';
+import { resolveGpuLayerPreferenceIndex, type GpuLayerPreference } from '../services/model-preferences.js';
 import { formatMb, formatNumber } from '../utils/format.js';
 import { theme, usageColor } from '../theme.js';
 import type { ModelMetadata } from '../types.js';
@@ -21,9 +22,10 @@ interface LayerSelectProps {
   vramMb: number;
   ramMb: number;
   unifiedMemory: boolean;
-  onSelect: (gpuLayers: number) => void;
+  onSelect: (gpuLayers: number, preference: GpuLayerPreference) => void;
   onBack: () => void;
   initialSelectedIndex?: number;
+  initialGpuPreference?: GpuLayerPreference;
   onSelectedIndexChange?: (selectedIndex: number) => void;
 }
 
@@ -184,16 +186,22 @@ export function LayerSelect({
   onSelect,
   onBack,
   initialSelectedIndex,
+  initialGpuPreference,
   onSelectedIndexChange,
 }: LayerSelectProps) {
   const maxGpu = calculateMaxGpuLayers(totalLayers, modelSizeMb, kvCacheMb, vramMb);
   const presets = generatePresets(totalLayers, modelSizeMb, kvCacheMb, vramMb);
   const itemCount = presets.length + 1;
+  const preferredIndex = initialSelectedIndex
+    ?? resolveGpuLayerPreferenceIndex(presets, initialGpuPreference, presets.length)
+    ?? 0;
   const [mode, setMode] = useState<'presets' | 'custom'>('presets');
   const [selectedIndex, setSelectedIndex] = useState(() => (
-    Math.min(initialSelectedIndex ?? 0, Math.max(0, itemCount - 1))
+    Math.min(preferredIndex, Math.max(0, itemCount - 1))
   ));
-  const [customLayers, setCustomLayers] = useState(maxGpu);
+  const [customLayers, setCustomLayers] = useState(() => (
+    Math.min(Math.max(0, initialGpuPreference?.type === 'custom' ? initialGpuPreference.layers : maxGpu), totalLayers)
+  ));
 
   useEffect(() => {
     setSelectedIndex(i => Math.min(i, Math.max(0, itemCount - 1)));
@@ -210,7 +218,7 @@ export function LayerSelect({
       else if (key.downArrow) setSelectedIndex(i => Math.min(itemCount - 1, i + 1));
       else if (key.return) {
         if (selectedIndex < presets.length) {
-          onSelect(presets[selectedIndex].layers);
+          onSelect(presets[selectedIndex].layers, { type: 'preset', layers: presets[selectedIndex].layers });
         } else {
           setMode('custom');
         }
@@ -219,7 +227,7 @@ export function LayerSelect({
       if (key.escape) { setMode('presets'); return; }
       if (key.leftArrow) setCustomLayers(l => Math.max(0, l - 1));
       else if (key.rightArrow) setCustomLayers(l => Math.min(totalLayers, l + 1));
-      else if (key.return) onSelect(customLayers);
+      else if (key.return) onSelect(customLayers, { type: 'custom', layers: customLayers });
     }
   });
 
@@ -266,7 +274,7 @@ export function LayerSelect({
 
   const highlightLayers = selectedIndex < presets.length
     ? presets[selectedIndex].layers
-    : maxGpu;
+    : customLayers;
 
   return (
     <Box flexDirection="column">

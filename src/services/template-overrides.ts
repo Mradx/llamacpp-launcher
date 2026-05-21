@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { ModelSelection } from '../types.js';
 import { getDataPath } from '../storage.js';
+import { getModelKey } from './model-key.js';
 
 const OVERRIDES_FILE = 'template-overrides.json';
 
@@ -8,12 +9,6 @@ type OverridesData = Record<string, string>;
 
 function getFilePath(): string {
   return getDataPath(OVERRIDES_FILE);
-}
-
-export function getModelKey(model: ModelSelection): string {
-  if (model.mode === 'local') return model.path;
-  if (model.mode === 'router') return model.presetPath;
-  return model.file ? `${model.repo}/${model.file}` : model.repo;
 }
 
 function loadAll(): OverridesData {

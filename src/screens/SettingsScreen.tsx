@@ -43,7 +43,7 @@ const FIELDS: FieldDef[] = [
   { key: 'draftTokens', label: 'Draft tokens', desc: 'Speculative decoding draft tokens', type: 'numeric', min: 0, max: 16 },
 ];
 
-const STATE_FILES = ['config.json', 'params-history.json', 'template-overrides.json'];
+const STATE_FILES = ['config.json', 'params-history.json', 'template-overrides.json', 'model-preferences.json'];
 
 const UPDATE_INDEX = FIELDS.length;
 const SAVE_INDEX = FIELDS.length + 1;

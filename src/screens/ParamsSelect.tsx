@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { loadHistory, removeFromHistory, type HistoryEntry } from '../services/params-history.js';
+import { resolveSamplingPreferenceIndex, type SamplingPreference } from '../services/model-preferences.js';
 import { useScrollableViewport } from '../hooks/useScrollableViewport.js';
 import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { truncateText } from '../utils/terminal.js';
@@ -10,23 +11,26 @@ import type { ParamsProfile, ModelParams } from '../types.js';
 import { theme } from '../theme.js';
 
 type SelectAction =
-  | { type: 'preset'; params: ModelParams | null }
+  | { type: 'preset'; params: ModelParams; preference: SamplingPreference }
+  | { type: 'defaults'; preference: SamplingPreference }
+  | { type: 'recent-custom'; params: ModelParams; preference: SamplingPreference }
   | { type: 'custom' }
   | { type: 'expert' }
-  | { type: 'recent-expert'; rawArgs: string[] };
+  | { type: 'recent-expert'; rawArgs: string[]; preference: SamplingPreference };
 
 interface ParamsSelectProps {
   presetName: string;
   profiles: ParamsProfile[];
   hasTemplate: boolean;
   hasTemplateOverride: boolean;
-  onSelect: (params: ModelParams | null) => void;
+  onSelect: (params: ModelParams | null, preference: SamplingPreference) => void;
   onCustom: () => void;
   onExpert: () => void;
-  onExpertDirect: (rawArgs: string[]) => void;
+  onExpertDirect: (rawArgs: string[], preference: SamplingPreference) => void;
   onTemplate: () => void;
   onBack: () => void;
   initialSelectedIndex?: number;
+  initialSamplingPreference?: SamplingPreference;
   onSelectedIndexChange?: (selectedIndex: number) => void;
 }
 
@@ -54,40 +58,58 @@ export function ParamsSelect({
   onTemplate,
   onBack,
   initialSelectedIndex,
+  initialSamplingPreference,
   onSelectedIndexChange,
 }: ParamsSelectProps) {
-  const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
   const { columns } = useTerminalViewport();
 
   const recentStart = profiles.length;
 
-  const recentItems: Array<{ name: string; desc: string; action: SelectAction }> = history.map(entry => {
+  const recentItems: Array<{ name: string; desc: string; action: SelectAction; preference: SamplingPreference }> = history.map(entry => {
     if (entry.type === 'custom') {
+      const preference: SamplingPreference = { type: 'custom', params: entry.params };
       return {
         name: '↻ Custom',
         desc: formatParamsRaw(entry.params),
-        action: { type: 'preset' as const, params: entry.params },
+        action: { type: 'recent-custom' as const, params: entry.params, preference },
+        preference,
       };
     }
+    const preference: SamplingPreference = { type: 'expert', rawArgs: entry.rawArgs };
     return {
       name: '↻ Expert',
       desc: entry.raw,
-      action: { type: 'recent-expert' as const, rawArgs: entry.rawArgs },
+      action: { type: 'recent-expert' as const, rawArgs: entry.rawArgs, preference },
+      preference,
     };
   });
 
-  const items: Array<{ name: string; desc?: string; action: SelectAction }> = [
+  const items: Array<{ name: string; desc?: string; action: SelectAction; preference?: SamplingPreference }> = [
     ...profiles.map(p => ({
       name: p.name,
       desc: formatParamsRaw(p.params),
-      action: { type: 'preset' as const, params: p.params },
+      action: {
+        type: 'preset' as const,
+        params: p.params,
+        preference: { type: 'profile' as const, profileName: p.name },
+      },
+      preference: { type: 'profile' as const, profileName: p.name },
     })),
     ...recentItems,
     { name: 'Custom (interactive)', desc: 'adjust parameters with visual sliders', action: { type: 'custom' } },
     { name: 'Expert (raw flags)', desc: 'type llama-server CLI flags directly', action: { type: 'expert' } },
-    { name: 'llama.cpp defaults', desc: 'no sampling params specified', action: { type: 'preset', params: null } },
+    {
+      name: 'llama.cpp defaults',
+      desc: 'no sampling params specified',
+      action: { type: 'defaults', preference: { type: 'defaults' } },
+      preference: { type: 'defaults' },
+    },
   ];
+  const preferredIndex = initialSelectedIndex
+    ?? resolveSamplingPreferenceIndex(items, initialSamplingPreference)
+    ?? 0;
+  const [selectedIndex, setSelectedIndex] = useState(() => preferredIndex);
   const listViewport = useScrollableViewport({
     itemCount: items.length,
     selectedIndex,
@@ -130,13 +152,17 @@ export function ParamsSelect({
       const action = items[selectedIndex]?.action;
       if (!action) return;
       if (action.type === 'preset') {
-        onSelect(action.params);
+        onSelect(action.params, action.preference);
+      } else if (action.type === 'defaults') {
+        onSelect(null, action.preference);
+      } else if (action.type === 'recent-custom') {
+        onSelect(action.params, action.preference);
       } else if (action.type === 'custom') {
         onCustom();
       } else if (action.type === 'expert') {
         onExpert();
       } else if (action.type === 'recent-expert') {
-        onExpertDirect(action.rawArgs);
+        onExpertDirect(action.rawArgs, action.preference);
       }
     }
   });
