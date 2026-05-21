@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import type { SelectionResult } from './selection.js';
-import { buildServerArgs, validateServer } from './services/server.js';
+import { buildServerArgs, buildServerEnv, buildServerEnvOverrides, validateServer } from './services/server.js';
 import { formatNumber, formatMb } from './utils/format.js';
 import { LLAMA_CPP_LOGO } from './brand.js';
 import { theme } from './theme.js';
@@ -88,8 +88,13 @@ export function launchServer(result: SelectionResult): void {
     row('Sampling', 'llama.cpp defaults');
   }
 
+  const envOverrides = buildServerEnvOverrides(config);
+
   if (selection.chatTemplateOverride) {
     row('Template', 'custom override');
+  }
+  if (envOverrides.GGML_CUDA_PDL) {
+    row('CUDA PDL', config.cudaPdl === 'off' ? 'off (GGML_CUDA_PDL=0)' : 'on (GGML_CUDA_PDL=1)');
   }
 
   console.log(`  ${dim('─'.repeat(60))}`);
@@ -98,7 +103,11 @@ export function launchServer(result: SelectionResult): void {
   const args = buildServerArgs(config, selection);
   const serverPath = join(config.serverDir, config.serverExe);
 
-  console.log(`  ${labelColor('Command')}  ${dim(config.serverExe)} ${dim(args.join(' '))}`);
+  const envPrefix = Object.entries(envOverrides)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ');
+  const commandPreview = envPrefix ? `${envPrefix} ${config.serverExe}` : config.serverExe;
+  console.log(`  ${labelColor('Command')}  ${dim(commandPreview)} ${dim(args.join(' '))}`);
   console.log('');
 
   const title = isRouter
@@ -108,6 +117,7 @@ export function launchServer(result: SelectionResult): void {
 
   const proc = spawn(serverPath, args, {
     cwd: config.serverDir,
+    env: buildServerEnv(config),
     stdio: 'inherit',
   });
 

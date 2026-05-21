@@ -10,6 +10,7 @@ import { useInstaller } from '../hooks/useInstaller.js';
 import { getDataPath, getDataRoot } from '../storage.js';
 import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { clampLines, truncateText } from '../utils/terminal.js';
+import { isMac } from '../utils/platform.js';
 import type { StoredConfig } from '../types.js';
 import { theme } from '../theme.js';
 
@@ -23,25 +24,40 @@ const HOST_OPTIONS = [
   { value: '0.0.0.0', label: 'LAN accessible (0.0.0.0)' },
 ];
 
-type FieldKey = 'llamaCppDir' | 'hfCachePath' | 'host' | 'port' | 'parallelSlots' | 'draftTokens';
+const CUDA_PDL_OPTIONS = [
+  { value: 'default', label: 'llama.cpp default' },
+  { value: 'on', label: 'On (GGML_CUDA_PDL=1)' },
+  { value: 'off', label: 'Off (GGML_CUDA_PDL=0)' },
+] as const;
+
+const SHOW_CUDA_PDL = !isMac();
+
+type FieldKey = 'llamaCppDir' | 'hfCachePath' | 'host' | 'port' | 'parallelSlots' | 'draftTokens' | 'cudaPdl';
+type SelectOption = { value: string; label: string };
 
 interface FieldDef {
   key: FieldKey;
   label: string;
   desc: string;
-  type: 'text' | 'toggle' | 'numeric';
+  type: 'text' | 'select' | 'numeric';
+  options?: readonly SelectOption[];
   min?: number;
   max?: number;
 }
 
-const FIELDS: FieldDef[] = [
+const ALL_FIELDS: FieldDef[] = [
   { key: 'llamaCppDir', label: 'llama.cpp folder', desc: 'Path to llama.cpp source directory', type: 'text' },
   { key: 'hfCachePath', label: 'HF Cache path', desc: 'Hugging Face model cache location', type: 'text' },
-  { key: 'host', label: 'Host', desc: 'Server access mode', type: 'toggle' },
+  { key: 'host', label: 'Host', desc: 'Server access mode', type: 'select', options: HOST_OPTIONS },
   { key: 'port', label: 'Port', desc: 'Server port (1-65535)', type: 'numeric', min: 1, max: 65535 },
   { key: 'parallelSlots', label: 'Parallel slots', desc: 'Concurrent inference slots', type: 'numeric', min: 1, max: 8 },
   { key: 'draftTokens', label: 'Draft tokens', desc: 'Speculative decoding draft tokens', type: 'numeric', min: 0, max: 16 },
+  { key: 'cudaPdl', label: 'CUDA PDL', desc: 'NVIDIA Hopper+/Blackwell launch optimization', type: 'select', options: CUDA_PDL_OPTIONS },
 ];
+
+const FIELDS = SHOW_CUDA_PDL
+  ? ALL_FIELDS
+  : ALL_FIELDS.filter(field => field.key !== 'cudaPdl');
 
 const STATE_FILES = ['config.json', 'params-history.json', 'template-overrides.json', 'model-preferences.json'];
 
@@ -60,7 +76,7 @@ const TABS_INDEX = -1;
 // shared min-height keeps the frame height constant across both tabs and also
 // absorbs the extra status line, so finishing an update never changes the
 // height either.
-const TAB_BODY_HEIGHT = 21;
+const TAB_BODY_HEIGHT = SHOW_CUDA_PDL ? 23 : 21;
 
 type SettingsTab = 'config' | 'info';
 type StateFileInfo = ReturnType<typeof getStateFileInfo>;
@@ -158,10 +174,10 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
     port: currentConfig.port,
     parallelSlots: currentConfig.parallelSlots,
     draftTokens: currentConfig.draftTokens,
+    cudaPdl: currentConfig.cudaPdl,
   });
 
   const activeTab = TABS[activeTabIndex].key;
-  const hostIdx = HOST_OPTIONS.findIndex(o => o.value === values.host);
   const dataRoot = getDataRoot();
   const bodyHeight = Math.max(8, rows - 8);
   const maxLineWidth = Math.max(24, columns - 8);
@@ -206,6 +222,7 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
       port: Number(values.port),
       parallelSlots: Number(values.parallelSlots),
       draftTokens: Number(values.draftTokens),
+      cudaPdl: String(values.cudaPdl) as StoredConfig['cudaPdl'],
     };
     saveUserConfig(config);
     onDone(true, sourceChanged);
@@ -304,9 +321,12 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
       if (selectedIndex < FIELDS.length) {
         const field = FIELDS[selectedIndex];
         const dir = key.rightArrow ? 1 : -1;
-        if (field.type === 'toggle') {
-          const newIdx = (hostIdx + dir + HOST_OPTIONS.length) % HOST_OPTIONS.length;
-          setValues(prev => ({ ...prev, host: HOST_OPTIONS[newIdx].value }));
+        if (field.type === 'select') {
+          const options = field.options ?? [];
+          if (options.length === 0) return;
+          const currentIndex = Math.max(0, options.findIndex(option => option.value === values[field.key]));
+          const nextIndex = (currentIndex + dir + options.length) % options.length;
+          setValues(prev => ({ ...prev, [field.key]: options[nextIndex].value }));
         } else if (field.type === 'numeric') {
           const current = Number(values[field.key]);
           const next = Math.max(field.min!, Math.min(field.max!, current + dir));
@@ -333,8 +353,8 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
             const error = field.key === 'llamaCppDir' ? pathStatus : fieldErrors[field.key];
 
             let displayValue: string;
-            if (field.type === 'toggle') {
-              const opt = HOST_OPTIONS.find(o => o.value === value);
+            if (field.type === 'select') {
+              const opt = field.options?.find(o => o.value === value);
               displayValue = opt?.label || String(value);
             } else {
               displayValue = String(value) || '(not set)';
@@ -446,8 +466,9 @@ export function SettingsScreen({ currentConfig, onDone }: SettingsScreenProps) {
           </Box>
 
           <Box flexDirection="column" marginBottom={1}>
-            <Text color={theme.textMuted} bold>Environment override</Text>
+            <Text color={theme.textMuted} bold>Environment overrides</Text>
             <Text dimColor>LLAMACPP_LAUNCHER_HOME</Text>
+            {SHOW_CUDA_PDL && <Text dimColor>GGML_CUDA_PDL</Text>}
           </Box>
 
           <Box flexDirection="column">

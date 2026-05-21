@@ -128,6 +128,7 @@ Defaults live in `config.default.json`. On first run, a user configuration file 
 | `port` | number | `8484` | Server port (1–65535). |
 | `parallelSlots` | number | `1` | Number of parallel server slots. |
 | `draftTokens` | number | `2` | Draft tokens for speculative decoding. |
+| `cudaPdl` | `"default" \| "on" \| "off"` | `"default"` | Controls the `GGML_CUDA_PDL` environment override for CUDA PDL. `default` leaves llama.cpp behavior untouched, `on` sets `GGML_CUDA_PDL=1`, and `off` sets `GGML_CUDA_PDL=0`. |
 | `contextOptions` | number[] | `[4096, 20000, 64000, 96000, 128000]` | Context-size choices offered in the UI. |
 
 `llamaCppDir` is mandatory and is collected during first-run setup. Paths beginning with `~/` are expanded to the user's home directory.

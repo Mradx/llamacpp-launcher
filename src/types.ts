@@ -1,3 +1,5 @@
+export type CudaPdlMode = 'default' | 'on' | 'off';
+
 export interface StoredConfig {
   llamaCppDir: string;
   hfCachePath: string;
@@ -5,6 +7,7 @@ export interface StoredConfig {
   port: number;
   parallelSlots: number;
   draftTokens: number;
+  cudaPdl: CudaPdlMode;
   contextOptions: number[];
 }
 

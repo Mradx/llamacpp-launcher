@@ -13,6 +13,7 @@ const StoredConfigSchema = z.object({
   port: z.number().int().min(1).max(65535),
   parallelSlots: z.number().int().min(1),
   draftTokens: z.number().int().min(0),
+  cudaPdl: z.enum(['default', 'on', 'off']),
   contextOptions: z.array(z.number().int().positive()),
 });
 
@@ -122,6 +123,7 @@ export function saveUserConfig(config: StoredConfig): void {
     port: config.port,
     parallelSlots: config.parallelSlots,
     draftTokens: config.draftTokens,
+    cudaPdl: config.cudaPdl,
     contextOptions: config.contextOptions,
   };
   writeFileSync(userPath, JSON.stringify(toSave, null, 2) + '\n', 'utf-8');

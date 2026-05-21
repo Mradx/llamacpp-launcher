@@ -77,6 +77,24 @@ export function buildServerArgs(config: Config, selection: FullSelection): strin
   return args;
 }
 
+export function buildServerEnvOverrides(config: Config): Record<string, string> {
+  if (config.cudaPdl === 'on') {
+    return { GGML_CUDA_PDL: '1' };
+  }
+  if (config.cudaPdl === 'off') {
+    return { GGML_CUDA_PDL: '0' };
+  }
+  return {};
+}
+
+export function buildServerEnv(config: Config): NodeJS.ProcessEnv {
+  const overrides = buildServerEnvOverrides(config);
+  if (Object.keys(overrides).length === 0) {
+    return process.env;
+  }
+  return { ...process.env, ...overrides };
+}
+
 export function validateServer(config: Config): { ok: boolean; error?: string } {
   const serverPath = join(config.serverDir, config.serverExe);
   if (!existsSync(config.serverDir)) {
@@ -99,6 +117,7 @@ export function spawnServer(
 
   const proc = spawn(serverPath, args, {
     cwd: config.serverDir,
+    env: buildServerEnv(config),
     windowsHide: false,
   });
 
