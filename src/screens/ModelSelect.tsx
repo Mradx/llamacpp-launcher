@@ -21,6 +21,7 @@ interface ModelSelectProps {
   hfCachePath: string;
   version?: VersionInfo | null;
   onSelect: (model: ModelSelection) => void;
+  onRouter: () => void;
   onDelete: (model: LocalModel) => void;
   onRefresh: () => void;
   onQuit: () => void;
@@ -40,6 +41,7 @@ type FlatItem =
   | { type: 'single'; model: LocalModel }
   | { type: 'group'; group: ModelGroup }
   | { type: 'child'; model: LocalModel; isLast: boolean }
+  | { type: 'router' }
   | { type: 'hf' }
   | { type: 'settings' };
 
@@ -97,6 +99,7 @@ function buildFlatItems(groups: ModelGroup[], expanded: Set<string>): FlatItem[]
       }
     }
   }
+  items.push({ type: 'router' });
   items.push({ type: 'hf' });
   items.push({ type: 'settings' });
   return items;
@@ -130,12 +133,12 @@ function isTopLevelModelItem(item?: FlatItem): boolean {
 }
 
 function shouldSeparateAfterModelItem(item?: FlatItem): boolean {
-  return isTopLevelModelItem(item) || item?.type === 'hf';
+  return isTopLevelModelItem(item) || item?.type === 'router' || item?.type === 'hf';
 }
 
 export function ModelSelect({
   models, loading, hfCachePath, version,
-  onSelect, onDelete, onRefresh, onQuit, onSettings,
+  onSelect, onRouter, onDelete, onRefresh, onQuit, onSettings,
   initialSelectedIndex, onSelectedIndexChange,
 }: ModelSelectProps) {
   const [selectedIndex, _setSelectedIndex] = useState(initialSelectedIndex ?? 0);
@@ -163,7 +166,7 @@ export function ModelSelect({
     let n = 0;
     for (let i = 0; i < flatItems.length; i++) {
       const item = flatItems[i];
-      if (item.type === 'single' || item.type === 'group' || item.type === 'hf') {
+      if (item.type === 'single' || item.type === 'group' || item.type === 'router' || item.type === 'hf') {
         nums.set(i, ++n);
       }
     }
@@ -246,6 +249,8 @@ export function ModelSelect({
         });
       } else if (item.type === 'hf') {
         setShowHfInput(true);
+      } else if (item.type === 'router') {
+        onRouter();
       } else if (item.type === 'settings') {
         onSettings();
       }
@@ -398,6 +403,33 @@ export function ModelSelect({
             <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
               {truncateText(label, maxLineWidth - 1)}
             </Text>
+          </Box>
+        </Box>
+      );
+    }
+
+    if (item.type === 'router') {
+      return (
+        <Box
+          key="router-action"
+          flexDirection="column"
+          marginBottom={nextItem?.type === 'hf' ? 1 : 0}
+        >
+          <Box>
+            <Text color={isSelected ? theme.marker : undefined}>
+              {isSelected ? ' › ' : '   '}
+            </Text>
+            <Box width={4}>
+              <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+                {num}.
+              </Text>
+            </Box>
+            <Text color={isSelected ? 'white' : theme.textMuted} bold={isSelected}>
+              Start multi-model router...
+            </Text>
+          </Box>
+          <Box marginLeft={8}>
+            <Text dimColor>{models.length} cached GGUF models · writes models.ini</Text>
           </Box>
         </Box>
       );

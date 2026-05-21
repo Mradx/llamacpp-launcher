@@ -77,7 +77,8 @@ export type FitStatus = 'GPU_OK' | 'PARTIAL' | 'RAM_OK' | 'TOO_BIG';
 
 export type ModelSelection =
   | { mode: 'local'; path: string; label: string; metadata?: ModelMetadata }
-  | { mode: 'hf'; repo: string; file?: string; label: string; metadata?: ModelMetadata };
+  | { mode: 'hf'; repo: string; file?: string; label: string; metadata?: ModelMetadata }
+  | { mode: 'router'; label: string; presetPath: string };
 
 export interface ModelParams {
   temp?: number;
@@ -105,6 +106,33 @@ export interface ModelPreset {
   profiles: ParamsProfile[];
 }
 
+export interface RouterModelConfig {
+  alias: string;
+  label: string;
+  path: string;
+  fileName: string;
+  repoId: string;
+  sizeBytes: number;
+  enabled: boolean;
+  contextSize: number;
+  gpuLayers: number;
+  parallelSlots: number;
+  loadOnStartup: boolean;
+  mtpEnabled: boolean;
+  params: ModelParams | null;
+  paramsLabel: string;
+  rawArgs: string[];
+  metadata?: ModelMetadata;
+}
+
+export interface RouterLaunchConfig {
+  presetPath: string;
+  models: RouterModelConfig[];
+  modelsMax: number;
+  autoload: boolean;
+  sleepIdleSeconds: number;
+}
+
 export interface FullSelection {
   model: ModelSelection;
   metadata?: ModelMetadata;
@@ -114,6 +142,7 @@ export interface FullSelection {
   params: ModelParams | null;
   rawArgs: string[];
   chatTemplateOverride?: string;
+  router?: RouterLaunchConfig;
 }
 
-export type Screen = 'model-select' | 'context-select' | 'quant-picker' | 'layer-select' | 'params-select' | 'custom-params' | 'expert-params' | 'chat-template';
+export type Screen = 'model-select' | 'router-config' | 'context-select' | 'quant-picker' | 'layer-select' | 'params-select' | 'custom-params' | 'expert-params' | 'chat-template';

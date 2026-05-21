@@ -21,7 +21,8 @@ import { ParamsSelect } from './screens/ParamsSelect.js';
 import { CustomParams } from './screens/CustomParams.js';
 import { ExpertParams } from './screens/ExpertParams.js';
 import { ChatTemplate } from './screens/ChatTemplate.js';
-import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, StoredConfig, HardwareInfo, NetworkInfo } from './types.js';
+import { RouterConfig } from './screens/RouterConfig.js';
+import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, StoredConfig, HardwareInfo, NetworkInfo, RouterLaunchConfig, ModelMetadata } from './types.js';
 
 export interface SelectionResult {
   config: Config;
@@ -36,6 +37,7 @@ interface SelectionAppProps {
 
 function getModelIdentifier(model: ModelSelection): string {
   if (model.mode === 'local') return model.path + ' ' + model.label;
+  if (model.mode === 'router') return model.label;
   return model.repo + ' ' + (model.file || '') + ' ' + model.label;
 }
 
@@ -66,7 +68,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const defaultContext = config.contextOptions[Math.floor(config.contextOptions.length / 2)] || 64000;
   const [contextSize, setContextSize] = useState(defaultContext);
   const [modelSizeBytes, setModelSizeBytes] = useState<number | undefined>();
-  const [modelMetadata, setModelMetadata] = useState<ModelSelection['metadata']>();
+  const [modelMetadata, setModelMetadata] = useState<ModelMetadata | undefined>();
   const [quantSelectedContextSize, setQuantSelectedContextSize] = useState<number | undefined>();
   const [gpuLayers, setGpuLayers] = useState(99);
   const [didShowLayerSelect, setDidShowLayerSelect] = useState(false);
@@ -79,6 +81,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [customParamsIndex, setCustomParamsIndex] = useState<number | undefined>();
 
   const handleModelSelect = async (model: ModelSelection) => {
+    if (model.mode === 'router') return;
     setModelMetadata(model.metadata);
 
     if (model.mode === 'hf') {
@@ -225,9 +228,36 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     setScreen('params-select');
   };
 
+  const handleRouter = () => {
+    setScreen('router-config');
+  };
+
+  const handleRouterConfirm = (router: RouterLaunchConfig) => {
+    const fullSelection: FullSelection = {
+      model: {
+        mode: 'router',
+        label: 'Multi-model router',
+        presetPath: router.presetPath,
+      },
+      contextSize: 0,
+      gpuLayers: 0,
+      mtpEnabled: false,
+      params: null,
+      rawArgs: [],
+      router,
+    };
+    onDone({ config, hardware, network, selection: fullSelection });
+    exit();
+  };
+
   const finalize = (params: ModelParams | null, rawArgs: string[]) => {
     const metadata = modelSizeBytes ? getEffectiveMetadata(modelMetadata, modelSizeBytes) : modelMetadata;
     const model = { ...selectedModel!, metadata } as ModelSelection;
+    const modelSource = model.mode === 'hf'
+      ? model.repo
+      : model.mode === 'local'
+        ? model.path
+        : model.label;
     const fullSelection: FullSelection = {
       model,
       metadata,
@@ -235,7 +265,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       gpuLayers,
       mtpEnabled: detectMtp(
         metadata,
-        model.mode === 'hf' ? model.repo : model.path,
+        modelSource,
         model.mode === 'hf' ? model.file : undefined
       ),
       params,
@@ -294,12 +324,23 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           hfCachePath={config.hfCachePath}
           version={version}
           onSelect={handleModelSelect}
+          onRouter={handleRouter}
           onDelete={deleteModel}
           onRefresh={refreshModels}
           onQuit={handleQuit}
           onSettings={handleSettings}
           initialSelectedIndex={modelSelectIndex}
           onSelectedIndexChange={setModelSelectIndex}
+        />
+      )}
+
+      {screen === 'router-config' && (
+        <RouterConfig
+          models={models}
+          config={config}
+          hardware={hardware}
+          onConfirm={handleRouterConfirm}
+          onBack={() => setScreen('model-select')}
         />
       )}
 

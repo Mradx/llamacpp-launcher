@@ -9,6 +9,7 @@ import { theme } from './theme.js';
 
 export function launchServer(result: SelectionResult): void {
   const { config, hardware, network, selection } = result;
+  const isRouter = selection.model.mode === 'router';
 
   const validation = validateServer(config);
   if (!validation.ok) {
@@ -36,7 +37,13 @@ export function launchServer(result: SelectionResult): void {
 
   row('Model', selection.model.label);
   row('Engine', config.serverExe);
-  if (selection.metadata) {
+  if (isRouter && selection.router) {
+    const enabled = selection.router.models.filter(model => model.enabled).length;
+    row('Preset', selection.router.presetPath);
+    row('Models', `${enabled} enabled`);
+    row('Max loaded', selection.router.modelsMax === 0 ? 'unlimited' : String(selection.router.modelsMax));
+    row('Autoload', selection.router.autoload ? 'on request' : 'off');
+  } else if (selection.metadata) {
     const m = selection.metadata;
     if (m.architecture) row('Architecture', m.architecture);
     if (m.blockCount) {
@@ -56,9 +63,15 @@ export function launchServer(result: SelectionResult): void {
   row('Local', network?.localUrl || `http://localhost:${config.port}`);
   row('Network', network?.lanUrl || 'unavailable');
   console.log('');
-  console.log(`  ${dim(`Context ${formatNumber(selection.contextSize)} │ GPU Layers ${selection.gpuLayers} │ Slots ${config.parallelSlots} │ MTP ${selection.mtpEnabled ? 'on' : 'off'}`)}`);
+  if (isRouter && selection.router) {
+    console.log(`  ${dim(`Router mode │ models.ini controls context, GPU layers, slots and MTP per model`)}`);
+  } else {
+    console.log(`  ${dim(`Context ${formatNumber(selection.contextSize)} │ GPU Layers ${selection.gpuLayers} │ Slots ${config.parallelSlots} │ MTP ${selection.mtpEnabled ? 'on' : 'off'}`)}`);
+  }
 
-  if (selection.params) {
+  if (isRouter) {
+    row('Sampling', 'client request or per-model preset');
+  } else if (selection.params) {
     const p = selection.params;
     const parts: string[] = [];
     if (p.temp !== undefined) parts.push(`temp=${p.temp}`);
@@ -88,7 +101,9 @@ export function launchServer(result: SelectionResult): void {
   console.log(`  ${labelColor('Command')}  ${dim(config.serverExe)} ${dim(args.join(' '))}`);
   console.log('');
 
-  const title = `llama.cpp | ${selection.model.label} | :${config.port}`;
+  const title = isRouter
+    ? `llama.cpp router | :${config.port}`
+    : `llama.cpp | ${selection.model.label} | :${config.port}`;
   process.title = title;
 
   const proc = spawn(serverPath, args, {

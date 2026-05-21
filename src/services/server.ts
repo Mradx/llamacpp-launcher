@@ -8,6 +8,9 @@ function buildModelArgs(selection: FullSelection): string[] {
   if (model.mode === 'local') {
     return ['-m', model.path];
   }
+  if (model.mode === 'router') {
+    throw new Error('Router mode does not use model args');
+  }
   const args = ['-hf', model.repo];
   if (model.file) {
     args.push('--hf-file', model.file);
@@ -16,6 +19,27 @@ function buildModelArgs(selection: FullSelection): string[] {
 }
 
 export function buildServerArgs(config: Config, selection: FullSelection): string[] {
+  if (selection.model.mode === 'router') {
+    const router = selection.router;
+    if (!router) {
+      throw new Error('Router selection missing launch config');
+    }
+
+    const args = [
+      '--host', config.host,
+      '--port', String(config.port),
+      '--models-preset', router.presetPath,
+      '--models-max', String(router.modelsMax),
+    ];
+
+    args.push(router.autoload ? '--models-autoload' : '--no-models-autoload');
+    if (router.sleepIdleSeconds >= 0) {
+      args.push('--sleep-idle-seconds', String(router.sleepIdleSeconds));
+    }
+
+    return args;
+  }
+
   const args = [
     '--tools', 'all',
     '--host', config.host,
