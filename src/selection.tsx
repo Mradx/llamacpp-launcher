@@ -14,9 +14,11 @@ import {
   resolveContextPreferenceIndex,
   saveModelContextPreference,
   saveModelGpuLayerPreference,
+  saveModelLaunchPreference,
   saveModelReasoningPreference,
   saveModelSamplingPreference,
   type GpuLayerPreference,
+  type ModelLaunchPreference,
   type ModelPreferences,
   type SamplingPreference,
 } from './services/model-preferences.js';
@@ -34,7 +36,7 @@ import { ExpertParams } from './screens/ExpertParams.js';
 import { ChatTemplate } from './screens/ChatTemplate.js';
 import { ReasoningSelect } from './screens/ReasoningSelect.js';
 import { RouterConfig } from './screens/RouterConfig.js';
-import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, StoredConfig, HardwareInfo, NetworkInfo, RouterLaunchConfig, ModelMetadata, ReasoningMode } from './types.js';
+import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, StoredConfig, HardwareInfo, NetworkInfo, RouterLaunchConfig, ModelMetadata, ReasoningMode, LocalModel, ParamsProfile } from './types.js';
 
 export interface SelectionResult {
   config: Config;
@@ -53,6 +55,60 @@ function getModelIdentifier(model: ModelSelection): string {
   return model.repo + ' ' + (model.file || '') + ' ' + model.label;
 }
 
+type LocalModelSelection = Extract<ModelSelection, { mode: 'local' }>;
+
+function toLocalModelSelection(model: LocalModel): LocalModelSelection {
+  return {
+    mode: 'local',
+    path: model.path,
+    label: model.metadata?.name || model.fileName.replace('.gguf', ''),
+    metadata: model.metadata,
+  };
+}
+
+export function resolveSamplingLaunch(
+  preference: SamplingPreference | undefined,
+  profiles: ParamsProfile[],
+): Pick<ModelLaunchPreference, 'params' | 'rawArgs'> | null {
+  if (!preference || preference.type === 'defaults') {
+    return { params: null, rawArgs: [] };
+  }
+  if (preference.type === 'custom') {
+    return { params: preference.params, rawArgs: [] };
+  }
+  if (preference.type === 'expert') {
+    return { params: null, rawArgs: preference.rawArgs };
+  }
+
+  const profile = profiles.find(item => item.name === preference.profileName);
+  if (!profile) return null;
+  return { params: profile.params, rawArgs: [] };
+}
+
+export function resolveQuickLaunchPreference(
+  preferences: ModelPreferences,
+  profiles: ParamsProfile[],
+  defaultContext: number,
+): ModelLaunchPreference | null {
+  if (preferences.lastLaunch) {
+    return preferences.lastLaunch;
+  }
+
+  if (!preferences.reasoningMode) {
+    return null;
+  }
+
+  const sampling = resolveSamplingLaunch(preferences.sampling, profiles);
+  if (!sampling) return null;
+
+  return {
+    contextSize: preferences.contextSize ?? defaultContext,
+    gpuLayers: preferences.gpuLayers?.layers ?? 99,
+    reasoningMode: preferences.reasoningMode,
+    ...sampling,
+  };
+}
+
 export function shouldShowQuantPickerForContext(
   model: ModelSelection | null,
   nextContextSize: number,
@@ -61,6 +117,34 @@ export function shouldShowQuantPickerForContext(
   if (model?.mode !== 'hf') return false;
   if (!model.file) return true;
   return quantSelectedContextSize !== undefined && quantSelectedContextSize !== nextContextSize;
+}
+
+function createFullSelection(
+  model: ModelSelection,
+  metadata: ModelMetadata | undefined,
+  launch: ModelLaunchPreference,
+): FullSelection {
+  const modelSource = model.mode === 'hf'
+    ? model.repo
+    : model.mode === 'local'
+      ? model.path
+      : model.label;
+
+  return {
+    model,
+    metadata,
+    contextSize: launch.contextSize,
+    gpuLayers: launch.gpuLayers,
+    mtpEnabled: detectMtp(
+      metadata,
+      modelSource,
+      model.mode === 'hf' ? model.file : undefined
+    ),
+    reasoningMode: launch.reasoningMode,
+    params: launch.params,
+    rawArgs: launch.rawArgs,
+    chatTemplateOverride: launch.chatTemplateOverride,
+  };
 }
 
 function SelectionApp({ onDone }: SelectionAppProps) {
@@ -131,6 +215,49 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     setReasoningSelectIndex(undefined);
     setPendingLaunchParams(null);
     setScreen('context-select');
+  };
+
+  const resolveQuickLaunchForModel = (model: ModelSelection): ModelLaunchPreference | null => {
+    const preferences = loadModelPreferences(model);
+    const modelPreset = findPreset(getModelIdentifier(model));
+    const launch = resolveQuickLaunchPreference(
+      preferences,
+      modelPreset?.profiles || [],
+      defaultContext,
+    );
+    if (!launch || preferences.lastLaunch) {
+      return launch;
+    }
+
+    const templateOverride = loadTemplateOverride(model);
+    return templateOverride === undefined
+      ? launch
+      : { ...launch, chatTemplateOverride: templateOverride };
+  };
+
+  const canQuickLaunch = (model: LocalModel): boolean => (
+    !!resolveQuickLaunchForModel(toLocalModelSelection(model))
+  );
+
+  const handleQuickLaunch = (localModel: LocalModel) => {
+    const modelSelection = toLocalModelSelection(localModel);
+    const launch = resolveQuickLaunchForModel(modelSelection);
+    if (!launch) return;
+
+    let size: number | undefined;
+    try {
+      size = statSync(modelSelection.path).size;
+    } catch {
+      size = undefined;
+    }
+
+    const metadata = size
+      ? getEffectiveMetadata(modelSelection.metadata, size)
+      : modelSelection.metadata;
+    const model = { ...modelSelection, metadata } as ModelSelection;
+    saveModelLaunchPreference(model, launch);
+    onDone({ config, hardware, network, selection: createFullSelection(model, metadata, launch) });
+    exit();
   };
 
   const handleContextSelect = (ctx: number) => {
@@ -322,27 +449,16 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const finalize = (params: ModelParams | null, rawArgs: string[], reasoningMode: ReasoningMode) => {
     const metadata = modelSizeBytes ? getEffectiveMetadata(modelMetadata, modelSizeBytes) : modelMetadata;
     const model = { ...selectedModel!, metadata } as ModelSelection;
-    const modelSource = model.mode === 'hf'
-      ? model.repo
-      : model.mode === 'local'
-        ? model.path
-        : model.label;
-    const fullSelection: FullSelection = {
-      model,
-      metadata,
+    const launch: ModelLaunchPreference = {
       contextSize,
       gpuLayers,
-      mtpEnabled: detectMtp(
-        metadata,
-        modelSource,
-        model.mode === 'hf' ? model.file : undefined
-      ),
       reasoningMode,
       params,
       rawArgs,
       chatTemplateOverride,
     };
-    onDone({ config, hardware, network, selection: fullSelection });
+    saveModelLaunchPreference(model, launch);
+    onDone({ config, hardware, network, selection: createFullSelection(model, metadata, launch) });
     exit();
   };
 
@@ -400,6 +516,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           hfCachePath={config.hfCachePath}
           version={version}
           onSelect={handleModelSelect}
+          onQuickLaunch={handleQuickLaunch}
+          canQuickLaunch={canQuickLaunch}
           onRouter={handleRouter}
           onDelete={deleteModel}
           onRefresh={handleRefresh}

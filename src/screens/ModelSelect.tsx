@@ -21,6 +21,8 @@ interface ModelSelectProps {
   hfCachePath: string;
   version?: VersionInfo | null;
   onSelect: (model: ModelSelection) => void;
+  onQuickLaunch: (model: LocalModel) => void;
+  canQuickLaunch: (model: LocalModel) => boolean;
   onRouter: () => void;
   onDelete: (model: LocalModel) => void;
   onRefresh: () => void;
@@ -138,7 +140,7 @@ function shouldSeparateAfterModelItem(item?: FlatItem): boolean {
 
 export function ModelSelect({
   models, loading, hfCachePath, version,
-  onSelect, onRouter, onDelete, onRefresh, onQuit, onSettings,
+  onSelect, onQuickLaunch, canQuickLaunch, onRouter, onDelete, onRefresh, onQuit, onSettings,
   initialSelectedIndex, onSelectedIndexChange,
 }: ModelSelectProps) {
   const [selectedIndex, _setSelectedIndex] = useState(initialSelectedIndex ?? 0);
@@ -210,6 +212,8 @@ export function ModelSelect({
     if (item?.type === 'single' || item?.type === 'child') return item.model;
     return null;
   };
+  const selectedModel = getModelAtIndex(selectedIndex);
+  const canQuickLaunchSelectedModel = selectedModel ? canQuickLaunch(selectedModel) : false;
 
   useInput((input, key) => {
     if (showHfInput) {
@@ -232,8 +236,11 @@ export function ModelSelect({
     } else if (key.downArrow) {
       setSelectedIndex(i => Math.min(totalItems - 1, i + 1));
     } else if (input === 'd' || input === 'D' || input === 'в' || input === 'В') {
-      const model = getModelAtIndex(selectedIndex);
-      if (model) setConfirmDelete(model);
+      if (selectedModel) setConfirmDelete(selectedModel);
+    } else if (input === 'l' || input === 'L' || input === 'д' || input === 'Д') {
+      if (selectedModel && canQuickLaunchSelectedModel) {
+        onQuickLaunch(selectedModel);
+      }
     } else if (key.return) {
       const item = flatItems[selectedIndex];
       if (!item) return;
@@ -533,8 +540,11 @@ export function ModelSelect({
             { key: '↑↓', label: 'navigate' },
             { key: '⏎', label: 'select' },
             { key: '←→', label: 'expand' },
+            ...(canQuickLaunchSelectedModel
+              ? [{ key: 'l', label: 'last launch' }]
+              : []),
             { key: 'r', label: loading ? 'refreshing' : 'refresh' },
-            ...(getModelAtIndex(selectedIndex) ? [{ key: 'd', label: 'delete' }] : []),
+            ...(selectedModel ? [{ key: 'd', label: 'delete' }] : []),
             { key: 'q', label: 'quit' },
           ]} />
         </Box>

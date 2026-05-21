@@ -15,11 +15,21 @@ export type SamplingPreference =
   | { type: 'custom'; params: ModelParams }
   | { type: 'expert'; rawArgs: string[] };
 
+export interface ModelLaunchPreference {
+  contextSize: number;
+  gpuLayers: number;
+  params: ModelParams | null;
+  rawArgs: string[];
+  reasoningMode: ReasoningMode;
+  chatTemplateOverride?: string;
+}
+
 export interface ModelPreferences {
   contextSize?: number;
   gpuLayers?: GpuLayerPreference;
   sampling?: SamplingPreference;
   reasoningMode?: ReasoningMode;
+  lastLaunch?: ModelLaunchPreference;
 }
 
 interface PreferencesData {
@@ -101,6 +111,37 @@ function normalizeSamplingPreference(value: unknown): SamplingPreference | undef
   return undefined;
 }
 
+function normalizeLaunchPreference(value: unknown): ModelLaunchPreference | undefined {
+  if (!isRecord(value)) return undefined;
+
+  const params = value.params === null ? null : normalizeParams(value.params);
+  const rawArgs = Array.isArray(value.rawArgs) && value.rawArgs.every(arg => typeof arg === 'string')
+    ? value.rawArgs
+    : undefined;
+
+  if (
+    isFiniteNumber(value.contextSize) &&
+    isFiniteNumber(value.gpuLayers) &&
+    params !== undefined &&
+    rawArgs &&
+    isReasoningMode(value.reasoningMode)
+  ) {
+    const launch: ModelLaunchPreference = {
+      contextSize: value.contextSize,
+      gpuLayers: value.gpuLayers,
+      params,
+      rawArgs,
+      reasoningMode: value.reasoningMode,
+    };
+    if (typeof value.chatTemplateOverride === 'string') {
+      launch.chatTemplateOverride = value.chatTemplateOverride;
+    }
+    return launch;
+  }
+
+  return undefined;
+}
+
 function normalizeModelPreferences(value: unknown): ModelPreferences {
   if (!isRecord(value)) return {};
 
@@ -121,6 +162,11 @@ function normalizeModelPreferences(value: unknown): ModelPreferences {
 
   if (isReasoningMode(value.reasoningMode)) {
     preferences.reasoningMode = value.reasoningMode;
+  }
+
+  const lastLaunch = normalizeLaunchPreference(value.lastLaunch);
+  if (lastLaunch) {
+    preferences.lastLaunch = lastLaunch;
   }
 
   return preferences;
@@ -172,6 +218,10 @@ export function saveModelSamplingPreference(model: ModelSelection, sampling: Sam
 
 export function saveModelReasoningPreference(model: ModelSelection, reasoningMode: ReasoningMode): void {
   updateModelPreferences(model, preferences => ({ ...preferences, reasoningMode }));
+}
+
+export function saveModelLaunchPreference(model: ModelSelection, lastLaunch: ModelLaunchPreference): void {
+  updateModelPreferences(model, preferences => ({ ...preferences, lastLaunch }));
 }
 
 export function resolveContextPreferenceIndex(options: number[], contextSize?: number): number | undefined {
