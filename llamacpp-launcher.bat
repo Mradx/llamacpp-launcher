@@ -299,6 +299,139 @@ function Add-UniquePath {
   }
 }
 
+function Get-NormalizedPathKey {
+  param([string] $Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return ''
+  }
+
+  try {
+    $normalized = (Resolve-Path -LiteralPath $Path).Path
+  } catch {
+    try {
+      $normalized = [IO.Path]::GetFullPath($Path)
+    } catch {
+      $normalized = $Path
+    }
+  }
+
+  return $normalized.TrimEnd([char] '\', [char] '/').ToLowerInvariant()
+}
+
+function Get-NodeIdentityKey {
+  param([string] $Path)
+
+  $full = Get-NormalizedPathKey -Path $Path
+  if ([string]::IsNullOrWhiteSpace($full)) {
+    return ''
+  }
+
+  try {
+    $dir = Split-Path -Parent $full
+    $leaf = Split-Path -Leaf $full
+    $dirItem = Get-Item -LiteralPath $dir -Force -ErrorAction Stop
+
+    $targetValue = $null
+    $targetProperty = $dirItem.PSObject.Properties['Target']
+    if ($targetProperty) {
+      $targetValue = $targetProperty.Value
+    }
+    if ($null -eq $targetValue) {
+      $targetProperty = $dirItem.PSObject.Properties['LinkTarget']
+      if ($targetProperty) {
+        $targetValue = $targetProperty.Value
+      }
+    }
+
+    if ($targetValue) {
+      if ($targetValue -is [array]) {
+        $target = [string] $targetValue[0]
+      } else {
+        $target = [string] $targetValue
+      }
+
+      if (-not [string]::IsNullOrWhiteSpace($target)) {
+        if (-not [IO.Path]::IsPathRooted($target)) {
+          $target = Join-Path (Split-Path -Parent $dirItem.FullName) $target
+        }
+
+        $targetNode = Join-Path $target $leaf
+        $targetKey = Get-NormalizedPathKey -Path $targetNode
+        if (-not [string]::IsNullOrWhiteSpace($targetKey)) {
+          return ("path:{0}" -f $targetKey)
+        }
+      }
+    }
+  } catch {
+  }
+
+  return ("path:{0}" -f $full)
+}
+
+function Get-NvmRuntimeKey {
+  param(
+    [string] $Node,
+    [string] $Version
+  )
+
+  if ($Version -notmatch '^v?\d+\.\d+\.\d+') {
+    return ''
+  }
+
+  $nodeKey = Get-NormalizedPathKey -Path $Node
+  if ([string]::IsNullOrWhiteSpace($nodeKey)) {
+    return ''
+  }
+
+  if ($env:NVM_SYMLINK) {
+    $nvmSymlinkKey = Get-NormalizedPathKey -Path (Join-Path $env:NVM_SYMLINK 'node.exe')
+    if ($nodeKey -eq $nvmSymlinkKey) {
+      return ("nvm:{0}" -f $Version.ToLowerInvariant())
+    }
+  }
+
+  $nvmRoots = @()
+  if ($env:NVM_HOME) {
+    $nvmRoots += $env:NVM_HOME
+  }
+  if ($env:APPDATA) {
+    $nvmRoots += Join-Path $env:APPDATA 'nvm'
+  }
+  if ($env:LOCALAPPDATA) {
+    $nvmRoots += Join-Path $env:LOCALAPPDATA 'nvm'
+  }
+
+  foreach ($root in $nvmRoots) {
+    $rootKey = Get-NormalizedPathKey -Path $root
+    if (-not [string]::IsNullOrWhiteSpace($rootKey) -and
+        $nodeKey.StartsWith($rootKey + '\') -and
+        $nodeKey -match '\\v\d+\.\d+\.\d+\\node\.exe$') {
+      return ("nvm:{0}" -f $Version.ToLowerInvariant())
+    }
+  }
+
+  if ($nodeKey -match '\\nvm4w\\nodejs\\node\.exe$') {
+    return ("nvm:{0}" -f $Version.ToLowerInvariant())
+  }
+
+  return ''
+}
+
+function Get-NodeDedupeKey {
+  param(
+    [string] $Node,
+    [string] $Version
+  )
+
+  $nvmKey = Get-NvmRuntimeKey -Node $Node -Version $Version
+  if (-not [string]::IsNullOrWhiteSpace($nvmKey)) {
+    return $nvmKey
+  }
+
+  return (Get-NodeIdentityKey -Path $Node)
+}
+
 function Get-NodeCandidates {
   $seen = @{}
 
@@ -417,16 +550,35 @@ function Get-NodeCandidates {
       Node = $node
       Npm = $npm
       Rank = $rank
+      DedupeKey = Get-NodeDedupeKey -Node $node -Version $version
     }
   }
 
-  return @($rows | Sort-Object `
+  $sortedRows = @($rows | Sort-Object `
     @{ Expression = { if ($_.Status -eq 'supported') { 0 } else { 1 } } }, `
     Rank, `
     @{ Expression = 'Major'; Descending = $true }, `
     @{ Expression = 'Minor'; Descending = $true }, `
     @{ Expression = 'Patch'; Descending = $true }, `
     Node)
+
+  $uniqueRows = @()
+  $seenRuntimes = @{}
+  foreach ($row in $sortedRows) {
+    $key = $row.DedupeKey
+    if ([string]::IsNullOrWhiteSpace($key)) {
+      $key = ("path:{0}" -f (Get-NormalizedPathKey -Path $row.Node))
+    }
+
+    if (-not $seenRuntimes.ContainsKey($key)) {
+      $seenRuntimes[$key] = $row.Node
+      $uniqueRows += $row
+    } else {
+      Write-Log ("Skipping duplicate Node.js runtime alias: {0} ({1}); keeping {2}" -f $row.Node, $row.Version, $seenRuntimes[$key])
+    }
+  }
+
+  return @($uniqueRows)
 }
 
 function Show-Menu {
