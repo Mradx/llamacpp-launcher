@@ -8,6 +8,7 @@ import { useInstaller } from '../hooks/useInstaller.js';
 import { getCriticalMissing, getOptionalMissing, canAutoInstall, NODE_WEB_UI_REQUIREMENT, type PrerequisiteStatus, type InstallPhase } from '../services/installer.js';
 import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { clampLines, truncateText } from '../utils/terminal.js';
+import { matchesShortcut } from '../utils/keyboard.js';
 import { theme } from '../theme.js';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -42,10 +43,6 @@ function formatElapsed(sec: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-function isInput(input: string, ...keys: string[]): boolean {
-  return keys.includes(input);
-}
-
 export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
   const { rows, columns } = useTerminalViewport();
   const {
@@ -75,9 +72,9 @@ export function InstallWizard({ onDone, onBack }: InstallWizardProps) {
         onBack();
       } else if (key.return && canProceed) {
         setStep('select-dir');
-      } else if (isInput(input, 'r', 'R', '\u043a', '\u041a')) {
+      } else if (matchesShortcut(input, 'r')) {
         redetect();
-      } else if (isInput(input, 'i', 'I', '\u0448', '\u0428')) {
+      } else if (matchesShortcut(input, 'i')) {
         const firstItem = criticalMissing.find(m => canAutoInstall(m));
         if (firstItem) {
           setAutoInstalling(firstItem);

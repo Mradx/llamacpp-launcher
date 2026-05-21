@@ -7,6 +7,7 @@ import { resolveSamplingPreferenceIndex, type SamplingPreference } from '../serv
 import { useScrollableViewport } from '../hooks/useScrollableViewport.js';
 import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { truncateText } from '../utils/terminal.js';
+import { matchesShortcut } from '../utils/keyboard.js';
 import type { ParamsProfile, ModelParams } from '../types.js';
 import { theme } from '../theme.js';
 
@@ -137,10 +138,10 @@ export function ParamsSelect({
       setSelectedIndex(i => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setSelectedIndex(i => Math.min(items.length - 1, i + 1));
-    } else if (input === 't' || input === 'T' || input === '\u0435' || input === '\u0415') {
+    } else if (matchesShortcut(input, 't')) {
       onTemplate();
       return;
-    } else if (input === 'd' || input === 'D' || input === '\u0432' || input === '\u0412') {
+    } else if (matchesShortcut(input, 'd')) {
       const historyIndex = selectedIndex - recentStart;
       if (historyIndex >= 0 && historyIndex < history.length) {
         removeFromHistory(historyIndex);

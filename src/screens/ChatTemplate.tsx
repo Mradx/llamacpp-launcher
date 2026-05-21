@@ -4,6 +4,7 @@ import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
 import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { truncateText } from '../utils/terminal.js';
+import { matchesShortcut } from '../utils/keyboard.js';
 import { theme } from '../theme.js';
 
 interface ChatTemplateProps {
@@ -212,17 +213,17 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
         return;
       }
 
-      if (key.ctrl && inputChar === 'z') { applyUndo(); return; }
-      if (key.ctrl && inputChar === 'y') { applyRedo(); return; }
+      if (key.ctrl && matchesShortcut(inputChar, 'z')) { applyUndo(); return; }
+      if (key.ctrl && matchesShortcut(inputChar, 'y')) { applyRedo(); return; }
 
-      if (key.ctrl && inputChar === 'k') {
+      if (key.ctrl && matchesShortcut(inputChar, 'k')) {
         pushUndo();
         setEditInput('');
         setEditCursor(0);
         return;
       }
 
-      if (key.ctrl && inputChar === 'r') {
+      if (key.ctrl && matchesShortcut(inputChar, 'r')) {
         pushUndo();
         setEditInput(embeddedTemplate ?? '');
         setEditCursor(0);
@@ -272,11 +273,11 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
         return;
       }
 
-      if (key.ctrl && inputChar !== 'j') {
+      if (key.ctrl && !matchesShortcut(inputChar, 'j')) {
         return;
       }
 
-      const fragment = key.ctrl && inputChar === 'j' ? '\n' : normalizeInputFragment(inputChar);
+      const fragment = key.ctrl && matchesShortcut(inputChar, 'j') ? '\n' : normalizeInputFragment(inputChar);
       if (fragment.length > 0) {
         pushUndo();
         setEditInput(`${editInput.slice(0, editCursor)}${fragment}${editInput.slice(editCursor)}`);
@@ -295,12 +296,12 @@ export function ChatTemplate({ embeddedTemplate, currentOverride, onConfirm, onB
     if (key.pageUp) { setScrollOffset(s => Math.max(0, s - viewportHeight)); return; }
     if (key.pageDown) { setScrollOffset(s => Math.min(maxScroll, s + viewportHeight)); return; }
 
-    if (inputChar === 'e' || inputChar === 'E' || inputChar === 'у' || inputChar === 'У') {
+    if (matchesShortcut(inputChar, 'e')) {
       enterEdit();
       return;
     }
 
-    if (inputChar === 'r' || inputChar === 'R' || inputChar === 'к' || inputChar === 'К') {
+    if (matchesShortcut(inputChar, 'r')) {
       if (override !== undefined) {
         setOverride(undefined);
         onConfirm(undefined);

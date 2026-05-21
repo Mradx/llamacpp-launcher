@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { CONTENT_MARGIN_X, PAGE_MARGIN_X } from '../layout.js';
 import { formatSize } from '../utils/format.js';
 import { truncateText } from '../utils/terminal.js';
+import { matchesShortcut } from '../utils/keyboard.js';
 import { getSiblingModels } from '../services/models.js';
 import { useScrollableViewport } from '../hooks/useScrollableViewport.js';
 import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
@@ -222,11 +223,11 @@ export function ModelSelect({
     }
     if (confirmDelete) return;
 
-    if (input === 'r' || input === 'R' || input === 'к' || input === 'К') {
+    if (matchesShortcut(input, 'r')) {
       onRefresh();
       return;
     }
-    if (input === 'q' || input === 'Q' || input === 'й' || input === 'Й') {
+    if (matchesShortcut(input, 'q')) {
       onQuit();
       return;
     }
@@ -235,9 +236,9 @@ export function ModelSelect({
       setSelectedIndex(i => Math.max(0, i - 1));
     } else if (key.downArrow) {
       setSelectedIndex(i => Math.min(totalItems - 1, i + 1));
-    } else if (input === 'd' || input === 'D' || input === 'в' || input === 'В') {
+    } else if (matchesShortcut(input, 'd')) {
       if (selectedModel) setConfirmDelete(selectedModel);
-    } else if (input === 'l' || input === 'L' || input === 'д' || input === 'Д') {
+    } else if (matchesShortcut(input, 'l')) {
       if (selectedModel && canQuickLaunchSelectedModel) {
         onQuickLaunch(selectedModel);
       }

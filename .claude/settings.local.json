@@ -3,7 +3,11 @@
     "allow": [
       "WebSearch",
       "WebFetch(domain:unsloth.ai)",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(git update-ref *)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/msg-mapper.sh)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --msg-filter '/tmp/msg-mapper.sh' d46de7d..HEAD)"
     ]
   }
 }

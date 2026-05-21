@@ -5,6 +5,7 @@ import { KeyHint } from '../components/KeyHint.js';
 import { parseRawArgs, findUnknownArgs } from '../services/known-params.js';
 import { useTerminalViewport } from '../hooks/useTerminalViewport.js';
 import { clampLines, truncateText } from '../utils/terminal.js';
+import { matchesShortcut } from '../utils/keyboard.js';
 import { theme } from '../theme.js';
 
 interface ExpertParamsProps {
@@ -156,9 +157,9 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
 
   useInput((inputChar, key) => {
     if (showConfirm) {
-      if (inputChar === 'y' || inputChar === 'Y') {
+      if (matchesShortcut(inputChar, 'y')) {
         onConfirm(parsedArgs);
-      } else if (inputChar === 'n' || inputChar === 'N' || key.escape) {
+      } else if (matchesShortcut(inputChar, 'n') || key.escape) {
         setShowConfirm(false);
         setUnknownArgs([]);
       }
@@ -214,11 +215,11 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
       return;
     }
 
-    if (key.ctrl && inputChar !== 'j') {
+    if (key.ctrl && !matchesShortcut(inputChar, 'j')) {
       return;
     }
 
-    const fragment = key.ctrl && inputChar === 'j' ? '\n' : normalizeInputFragment(inputChar);
+    const fragment = key.ctrl && matchesShortcut(inputChar, 'j') ? '\n' : normalizeInputFragment(inputChar);
     if (fragment.length > 0) {
       setInput(`${input.slice(0, cursorOffset)}${fragment}${input.slice(cursorOffset)}`);
       setCursorOffset(cursorOffset + fragment.length);
