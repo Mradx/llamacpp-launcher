@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import type { ModelParams, ModelSelection } from '../types.js';
+import type { ModelParams, ModelSelection, ReasoningMode } from '../types.js';
 import { getDataPath } from '../storage.js';
 import { getModelKey } from './model-key.js';
 
@@ -19,6 +19,7 @@ export interface ModelPreferences {
   contextSize?: number;
   gpuLayers?: GpuLayerPreference;
   sampling?: SamplingPreference;
+  reasoningMode?: ReasoningMode;
 }
 
 interface PreferencesData {
@@ -35,6 +36,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isReasoningMode(value: unknown): value is ReasoningMode {
+  return value === 'auto' || value === 'on' || value === 'off';
 }
 
 function normalizeParams(value: unknown): ModelParams | undefined {
@@ -114,6 +119,10 @@ function normalizeModelPreferences(value: unknown): ModelPreferences {
     preferences.sampling = sampling;
   }
 
+  if (isReasoningMode(value.reasoningMode)) {
+    preferences.reasoningMode = value.reasoningMode;
+  }
+
   return preferences;
 }
 
@@ -159,6 +168,10 @@ export function saveModelGpuLayerPreference(model: ModelSelection, gpuLayers: Gp
 
 export function saveModelSamplingPreference(model: ModelSelection, sampling: SamplingPreference): void {
   updateModelPreferences(model, preferences => ({ ...preferences, sampling }));
+}
+
+export function saveModelReasoningPreference(model: ModelSelection, reasoningMode: ReasoningMode): void {
+  updateModelPreferences(model, preferences => ({ ...preferences, reasoningMode }));
 }
 
 export function resolveContextPreferenceIndex(options: number[], contextSize?: number): number | undefined {

@@ -15,7 +15,7 @@ import {
 } from '../services/router-preset.js';
 import { formatNumber } from '../utils/format.js';
 import { truncateText } from '../utils/terminal.js';
-import type { Config, HardwareInfo, LocalModel, ModelParams, ParamsProfile, RouterLaunchConfig, RouterModelConfig } from '../types.js';
+import type { Config, HardwareInfo, LocalModel, ModelParams, ParamsProfile, ReasoningMode, RouterLaunchConfig, RouterModelConfig } from '../types.js';
 import { theme } from '../theme.js';
 
 interface RouterConfigProps {
@@ -47,6 +47,7 @@ type ModelDetailRow =
   | 'gpu'
   | 'slots'
   | 'startup'
+  | 'reasoning'
   | 'sampling'
   | 'custom'
   | 'expert'
@@ -88,6 +89,14 @@ function cycleNumber(value: number, options: number[], dir: -1 | 1): number {
   const currentIndex = options.indexOf(value);
   const index = currentIndex >= 0 ? currentIndex : 0;
   return options[(index + dir + options.length) % options.length];
+}
+
+const REASONING_MODES: ReasoningMode[] = ['auto', 'on', 'off'];
+
+function cycleReasoningMode(value: ReasoningMode, dir: -1 | 1): ReasoningMode {
+  const currentIndex = REASONING_MODES.indexOf(value);
+  const index = currentIndex >= 0 ? currentIndex : 0;
+  return REASONING_MODES[(index + dir + REASONING_MODES.length) % REASONING_MODES.length];
 }
 
 interface GpuLayerChoice {
@@ -212,6 +221,7 @@ export function RouterConfig({ models, config, hardware, onConfirm, onBack }: Ro
     'gpu',
     'slots',
     'startup',
+    'reasoning',
     'sampling',
     'custom',
     'expert',
@@ -407,6 +417,11 @@ export function RouterConfig({ models, config, hardware, onConfirm, onBack }: Ro
           }));
         } else if (row === 'sampling') {
           cycleModelProfile(modelIndex, dir);
+        } else if (row === 'reasoning') {
+          updateModel(modelIndex, model => ({
+            ...model,
+            reasoningMode: cycleReasoningMode(model.reasoningMode, dir),
+          }));
         } else if (row === 'enabled') {
           toggleModelEnabled(modelIndex);
         } else if (row === 'startup') {
@@ -421,6 +436,11 @@ export function RouterConfig({ models, config, hardware, onConfirm, onBack }: Ro
           toggleModelStartup(modelIndex);
         } else if (row === 'sampling') {
           cycleModelProfile(modelIndex, 1);
+        } else if (row === 'reasoning') {
+          updateModel(modelIndex, model => ({
+            ...model,
+            reasoningMode: cycleReasoningMode(model.reasoningMode, 1),
+          }));
         } else if (row === 'gpu') {
           setMode({ type: 'custom-gpu', index: modelIndex });
         } else if (row === 'custom') {
@@ -532,6 +552,7 @@ export function RouterConfig({ models, config, hardware, onConfirm, onBack }: Ro
     const meta = [
       model.repoId,
       model.mtpEnabled ? 'MTP' : undefined,
+      model.reasoningMode !== 'auto' ? `reasoning ${model.reasoningMode}` : undefined,
       model.metadata?.primaryQuantType,
       paramsSummary(model),
     ].filter(Boolean).join(' · ');
@@ -631,6 +652,7 @@ export function RouterConfig({ models, config, hardware, onConfirm, onBack }: Ro
         gpu: gpuChoiceLabel(model, hardware),
         slots: String(model.parallelSlots),
         startup: model.loadOnStartup ? 'yes' : 'lazy',
+        reasoning: model.reasoningMode,
         sampling: paramsSummary(model),
         custom: 'open sliders',
         expert: model.rawArgs.length > 0 ? model.rawArgs.join(' ') : 'raw llama-server flags',
@@ -643,6 +665,7 @@ export function RouterConfig({ models, config, hardware, onConfirm, onBack }: Ro
         gpu: 'GPU layers',
         slots: 'Slots',
         startup: 'Load on startup',
+        reasoning: 'Reasoning',
         sampling: profileCount > 0 ? `Sampling profile (${profileCount})` : 'Sampling profile',
         custom: 'Custom sampling',
         expert: 'Expert flags',
@@ -661,7 +684,7 @@ export function RouterConfig({ models, config, hardware, onConfirm, onBack }: Ro
           <Box flexDirection="column" marginLeft={2}>
             {modelDetailRows.map((row, index) => {
               const isSelected = index === modelDetailIndex;
-              const adjustable = row === 'enabled' || row === 'context' || row === 'gpu' || row === 'slots' || row === 'startup' || row === 'sampling';
+              const adjustable = row === 'enabled' || row === 'context' || row === 'gpu' || row === 'slots' || row === 'startup' || row === 'reasoning' || row === 'sampling';
               return (
                 <Box key={row}>
                   <Text color={isSelected ? theme.marker : undefined}>{isSelected ? ' › ' : '   '}</Text>

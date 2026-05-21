@@ -14,6 +14,7 @@ import {
   resolveContextPreferenceIndex,
   saveModelContextPreference,
   saveModelGpuLayerPreference,
+  saveModelReasoningPreference,
   saveModelSamplingPreference,
   type GpuLayerPreference,
   type ModelPreferences,
@@ -31,8 +32,9 @@ import { ParamsSelect } from './screens/ParamsSelect.js';
 import { CustomParams } from './screens/CustomParams.js';
 import { ExpertParams } from './screens/ExpertParams.js';
 import { ChatTemplate } from './screens/ChatTemplate.js';
+import { ReasoningSelect } from './screens/ReasoningSelect.js';
 import { RouterConfig } from './screens/RouterConfig.js';
-import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, StoredConfig, HardwareInfo, NetworkInfo, RouterLaunchConfig, ModelMetadata } from './types.js';
+import type { Screen, ModelSelection, FullSelection, HfFile, ModelParams, Config, StoredConfig, HardwareInfo, NetworkInfo, RouterLaunchConfig, ModelMetadata, ReasoningMode } from './types.js';
 
 export interface SelectionResult {
   config: Config;
@@ -89,6 +91,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
   const [layerSelectIndex, setLayerSelectIndex] = useState<number | undefined>();
   const [paramsSelectIndex, setParamsSelectIndex] = useState<number | undefined>();
   const [customParamsIndex, setCustomParamsIndex] = useState<number | undefined>();
+  const [reasoningSelectIndex, setReasoningSelectIndex] = useState<number | undefined>();
+  const [pendingLaunchParams, setPendingLaunchParams] = useState<{ params: ModelParams | null; rawArgs: string[] } | null>(null);
   const [modelPreferences, setModelPreferences] = useState<ModelPreferences>({});
 
   const handleModelSelect = async (model: ModelSelection) => {
@@ -124,6 +128,8 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     setContextSelectIndex(resolveContextPreferenceIndex(config.contextOptions, preferences.contextSize));
     setLayerSelectIndex(undefined);
     setParamsSelectIndex(undefined);
+    setReasoningSelectIndex(undefined);
+    setPendingLaunchParams(null);
     setScreen('context-select');
   };
 
@@ -222,12 +228,18 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     }
   };
 
+  const prepareReasoningSelect = (params: ModelParams | null, rawArgs: string[]) => {
+    setPendingLaunchParams({ params, rawArgs });
+    setReasoningSelectIndex(undefined);
+    setScreen('reasoning-select');
+  };
+
   const handleParamsSelect = (params: ModelParams | null, preference: SamplingPreference) => {
     if (selectedModel) {
       saveModelSamplingPreference(selectedModel, preference);
       setModelPreferences(prev => ({ ...prev, sampling: preference }));
     }
-    finalize(params, []);
+    prepareReasoningSelect(params, []);
   };
 
   const handleCustomConfirm = (params: ModelParams) => {
@@ -242,7 +254,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       saveModelSamplingPreference(selectedModel, preference);
       setModelPreferences(prev => ({ ...prev, sampling: preference }));
     }
-    finalize(hasParams ? params : null, []);
+    prepareReasoningSelect(hasParams ? params : null, []);
   };
 
   const handleExpertConfirm = (rawArgs: string[]) => {
@@ -256,7 +268,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       saveModelSamplingPreference(selectedModel, preference);
       setModelPreferences(prev => ({ ...prev, sampling: preference }));
     }
-    finalize(null, rawArgs);
+    prepareReasoningSelect(null, rawArgs);
   };
 
   const handleExpertDirect = (rawArgs: string[], preference: SamplingPreference) => {
@@ -264,7 +276,16 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       saveModelSamplingPreference(selectedModel, preference);
       setModelPreferences(prev => ({ ...prev, sampling: preference }));
     }
-    finalize(null, rawArgs);
+    prepareReasoningSelect(null, rawArgs);
+  };
+
+  const handleReasoningSelect = (reasoningMode: ReasoningMode) => {
+    if (selectedModel) {
+      saveModelReasoningPreference(selectedModel, reasoningMode);
+      setModelPreferences(prev => ({ ...prev, reasoningMode }));
+    }
+    const launchParams = pendingLaunchParams ?? { params: null, rawArgs: [] };
+    finalize(launchParams.params, launchParams.rawArgs, reasoningMode);
   };
 
   const handleTemplateConfirm = (override: string | undefined) => {
@@ -289,6 +310,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
       contextSize: 0,
       gpuLayers: 0,
       mtpEnabled: false,
+      reasoningMode: 'auto',
       params: null,
       rawArgs: [],
       router,
@@ -297,7 +319,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
     exit();
   };
 
-  const finalize = (params: ModelParams | null, rawArgs: string[]) => {
+  const finalize = (params: ModelParams | null, rawArgs: string[], reasoningMode: ReasoningMode) => {
     const metadata = modelSizeBytes ? getEffectiveMetadata(modelMetadata, modelSizeBytes) : modelMetadata;
     const model = { ...selectedModel!, metadata } as ModelSelection;
     const modelSource = model.mode === 'hf'
@@ -315,6 +337,7 @@ function SelectionApp({ onDone }: SelectionAppProps) {
         modelSource,
         model.mode === 'hf' ? model.file : undefined
       ),
+      reasoningMode,
       params,
       rawArgs,
       chatTemplateOverride,
@@ -479,6 +502,16 @@ function SelectionApp({ onDone }: SelectionAppProps) {
           currentOverride={chatTemplateOverride}
           onConfirm={handleTemplateConfirm}
           onBack={() => setScreen('params-select')}
+        />
+      )}
+
+      {screen === 'reasoning-select' && (
+        <ReasoningSelect
+          initialMode={modelPreferences.reasoningMode ?? 'auto'}
+          onSelect={handleReasoningSelect}
+          onBack={() => setScreen('params-select')}
+          initialSelectedIndex={reasoningSelectIndex}
+          onSelectedIndexChange={setReasoningSelectIndex}
         />
       )}
     </Box>

@@ -148,6 +148,7 @@ Start the launcher and follow the on-screen flow.
 3. **Quant picker** — (Hugging Face repos only) choose a quantization file, with fit status shown.
 4. **Layer select** — choose how many layers to offload to the GPU (shown when hardware and model size are known).
 5. **Params select** — choose a sampling profile, edit custom parameters, enter expert raw-argument mode, or override the chat template.
+6. **Reasoning select** — choose `auto`, `on`, or `off` for llama.cpp reasoning/thinking support.
 
 Once configuration is complete, the launcher prints a summary and the resolved command line, then spawns `llama-server.exe` with stdio inherited. Press `Ctrl+C` to stop the server.
 

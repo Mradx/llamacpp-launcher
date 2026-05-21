@@ -44,6 +44,7 @@ export function InfoBanner({ config, hardware, network, selection }: InfoBannerP
       <Box>
         <Text dimColor>
           Context {formatNumber(selection.contextSize)} │ Layers {selection.gpuLayers} │ Slots {config.parallelSlots} │ MTP {selection.mtpEnabled ? 'on' : 'off'}
+          {' '}│ Reasoning {selection.reasoningMode}
         </Text>
       </Box>
     </Box>

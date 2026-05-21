@@ -88,6 +88,10 @@ export function launchServer(result: SelectionResult): void {
     row('Sampling', 'llama.cpp defaults');
   }
 
+  if (!isRouter) {
+    row('Reasoning', selection.reasoningMode);
+  }
+
   const envOverrides = buildServerEnvOverrides(config);
 
   if (selection.chatTemplateOverride) {

@@ -29,6 +29,7 @@ function routerConfig(presetPath) {
       parallelSlots: 2,
       loadOnStartup: false,
       mtpEnabled: true,
+      reasoningMode: 'off',
       params: {
         temp: 1,
         top_k: 64,
@@ -58,6 +59,7 @@ test('router launch uses models preset instead of a single model arg', () => {
     contextSize: 0,
     gpuLayers: 0,
     mtpEnabled: false,
+    reasoningMode: 'auto',
     params: null,
     rawArgs: [],
     router,
@@ -86,6 +88,7 @@ test('router preset writes per-model loading parameters', () => {
   assert.match(content, /np = 2/);
   assert.match(content, /spec-type = draft-mtp/);
   assert.match(content, /spec-draft-n-max = 4/);
+  assert.match(content, /reasoning = off/);
   assert.match(content, /temp = 1/);
   assert.match(content, /top-k = 64/);
   assert.match(content, /top-p = 0.95/);
@@ -109,6 +112,7 @@ test('router preset parser restores saved per-model parameters', () => {
     n-gpu-layers = 24
     np = 3
     load-on-startup = true
+    reasoning = on
     temp = 0.7
     top-k = 20
     cache-type-k = q8_0
@@ -151,6 +155,7 @@ test('router preset parser restores saved per-model parameters', () => {
   assert.equal(gemma.gpuLayers, 24);
   assert.equal(gemma.parallelSlots, 3);
   assert.equal(gemma.loadOnStartup, true);
+  assert.equal(gemma.reasoningMode, 'on');
   assert.deepEqual(gemma.params, { temp: 0.7, top_k: 20 });
   assert.deepEqual(gemma.rawArgs, ['--cache-type-k', 'q8_0', '--no-mmap']);
 

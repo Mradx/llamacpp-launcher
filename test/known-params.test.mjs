@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRawArgsInput, parseRawArgs } from '../dist/services/known-params.js';
+import { findUnknownArgs, normalizeRawArgsInput, parseRawArgs } from '../dist/services/known-params.js';
 
 const expectedSamplingArgs = [
   '--temp', '1.0',
@@ -57,4 +57,8 @@ test('keeps quoted values together', () => {
     parseRawArgs('--grammar "root ::= item" --json-schema \'{"type":"object"}\''),
     ['--grammar', 'root ::= item', '--json-schema', '{"type":"object"}'],
   );
+});
+
+test('accepts llama.cpp reasoning flags in expert mode', () => {
+  assert.deepEqual(findUnknownArgs(['--reasoning', 'on', '-rea', 'off']), []);
 });

@@ -247,7 +247,7 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
 
   return (
     <Box flexDirection="column">
-      <Header title="EXPERT PARAMETERS" subtitle="Enter raw llama-server sampling flags" />
+      <Header title="EXPERT PARAMETERS" subtitle="Enter raw llama-server generation flags" />
 
       <Box flexDirection="column" marginLeft={2} marginBottom={1}>
         <Text dimColor>{truncateText('Examples: --temp 0.8 --top-p 0.95 --top-k 40 --min-p 0.05', lineWidth)}</Text>
@@ -282,7 +282,7 @@ export function ExpertParams({ onConfirm, onBack }: ExpertParamsProps) {
               <Text key={`${i}-${arg}`} color={theme.warning}>  - {arg}</Text>
             ))}
             <Text> </Text>
-            <Text dimColor>  These are not in the llama-server sampling docs.</Text>
+            <Text dimColor>  These are not in the known llama-server generation docs.</Text>
             <Text dimColor>  They may still work if the server supports them.</Text>
             <Text> </Text>
             <Text>  Proceed anyway? <Text bold color={theme.success}>[Y]</Text>es / <Text bold color={theme.danger}>[N]</Text>o</Text>

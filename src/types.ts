@@ -1,4 +1,5 @@
 export type CudaPdlMode = 'default' | 'on' | 'off';
+export type ReasoningMode = 'auto' | 'on' | 'off';
 
 export interface StoredConfig {
   llamaCppDir: string;
@@ -122,6 +123,7 @@ export interface RouterModelConfig {
   parallelSlots: number;
   loadOnStartup: boolean;
   mtpEnabled: boolean;
+  reasoningMode: ReasoningMode;
   params: ModelParams | null;
   paramsLabel: string;
   rawArgs: string[];
@@ -142,10 +144,11 @@ export interface FullSelection {
   contextSize: number;
   gpuLayers: number;
   mtpEnabled: boolean;
+  reasoningMode: ReasoningMode;
   params: ModelParams | null;
   rawArgs: string[];
   chatTemplateOverride?: string;
   router?: RouterLaunchConfig;
 }
 
-export type Screen = 'model-select' | 'router-config' | 'context-select' | 'quant-picker' | 'layer-select' | 'params-select' | 'custom-params' | 'expert-params' | 'chat-template';
+export type Screen = 'model-select' | 'router-config' | 'context-select' | 'quant-picker' | 'layer-select' | 'params-select' | 'custom-params' | 'expert-params' | 'chat-template' | 'reasoning-select';

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Config, FullSelection } from '../types.js';
+import type { Config, FullSelection, ReasoningMode } from '../types.js';
 
 function buildModelArgs(selection: FullSelection): string[] {
   const { model } = selection;
@@ -16,6 +16,16 @@ function buildModelArgs(selection: FullSelection): string[] {
     args.push('--hf-file', model.file);
   }
   return args;
+}
+
+function hasReasoningArg(rawArgs: string[] | undefined): boolean {
+  return !!rawArgs?.some(arg => arg === '--reasoning' || arg === '-rea');
+}
+
+function appendReasoningArgs(args: string[], mode: ReasoningMode, rawArgs: string[] | undefined): void {
+  if (mode !== 'auto' && !hasReasoningArg(rawArgs)) {
+    args.push('--reasoning', mode);
+  }
 }
 
 export function buildServerArgs(config: Config, selection: FullSelection): string[] {
@@ -54,6 +64,8 @@ export function buildServerArgs(config: Config, selection: FullSelection): strin
   if (selection.mtpEnabled) {
     args.push('--spec-type', 'draft-mtp', '--spec-draft-n-max', String(config.draftTokens));
   }
+
+  appendReasoningArgs(args, selection.reasoningMode ?? 'auto', selection.rawArgs);
 
   if (selection.params) {
     const p = selection.params;

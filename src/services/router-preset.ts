@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getDataPath } from '../storage.js';
-import type { Config, HardwareInfo, LocalModel, ModelParams, RouterLaunchConfig, RouterModelConfig } from '../types.js';
+import type { Config, HardwareInfo, LocalModel, ModelParams, ReasoningMode, RouterLaunchConfig, RouterModelConfig } from '../types.js';
 import { calculateKvCache, calculateMaxGpuLayers } from './memory.js';
 import { detectMtp } from './mtp.js';
 
@@ -15,6 +15,7 @@ interface ParsedRouterModelPreset {
   parallelSlots?: number;
   loadOnStartup?: boolean;
   mtpEnabled?: boolean;
+  reasoningMode?: ReasoningMode;
   params: ModelParams | null;
   rawArgs: string[];
 }
@@ -88,6 +89,8 @@ const RESERVED_MODEL_KEYS = new Set([
   'spec-type',
   'spec-draft-n-max',
   'jinja',
+  'reasoning',
+  'rea',
 ]);
 
 function parseScalar(value: string): string {
@@ -112,6 +115,15 @@ function parseBoolValue(value: string): boolean | undefined {
   const normalized = parseScalar(value).toLowerCase();
   if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
   if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  return undefined;
+}
+
+function parseReasoningMode(value: string | undefined): ReasoningMode | undefined {
+  if (value === undefined) return undefined;
+  const normalized = parseScalar(value).toLowerCase();
+  if (normalized === 'auto' || normalized === 'on' || normalized === 'off') {
+    return normalized;
+  }
   return undefined;
 }
 
@@ -191,6 +203,9 @@ export function parseRouterPresetContent(content: string): ParsedRouterPreset {
       ? parseBoolValue(currentSection.values.get('load-on-startup')!)
       : undefined;
     const specType = currentSection.values.get('spec-type');
+    const reasoningMode = parseReasoningMode(
+      currentSection.values.get('reasoning') ?? currentSection.values.get('rea'),
+    );
 
     preset.models.push({
       alias: currentSection.name,
@@ -200,6 +215,7 @@ export function parseRouterPresetContent(content: string): ParsedRouterPreset {
       parallelSlots,
       loadOnStartup,
       mtpEnabled: specType ? parseScalar(specType) === 'draft-mtp' : undefined,
+      reasoningMode,
       params: Object.keys(params).length > 0 ? params : null,
       rawArgs,
     });
@@ -258,6 +274,16 @@ function appendRawArgs(lines: string[], rawArgs: string[]): void {
   }
 }
 
+function hasReasoningArg(rawArgs: string[]): boolean {
+  return rawArgs.some(arg => arg === '--reasoning' || arg === '-rea');
+}
+
+function appendReasoningMode(lines: string[], mode: ReasoningMode | undefined, rawArgs: string[]): void {
+  if (mode && mode !== 'auto' && !hasReasoningArg(rawArgs)) {
+    lines.push(`reasoning = ${mode}`);
+  }
+}
+
 function appendModelParams(lines: string[], params: ModelParams | null): void {
   if (!params) return;
   for (const [key, argName] of PARAM_KEYS) {
@@ -309,6 +335,7 @@ export function createRouterLaunchConfig(
         parallelSlots: savedModel?.parallelSlots ?? config.parallelSlots,
         loadOnStartup: savedModel?.loadOnStartup ?? false,
         mtpEnabled: savedModel?.mtpEnabled ?? detectMtp(model.metadata, model.repoId, model.fileName),
+        reasoningMode: savedModel?.reasoningMode ?? 'auto',
         params,
         paramsLabel: rawArgs.length > 0
           ? 'Expert flags'
@@ -366,6 +393,7 @@ export function writeRouterPreset(config: RouterLaunchConfig, draftTokens: numbe
       );
     }
 
+    appendReasoningMode(lines, model.reasoningMode, model.rawArgs);
     appendModelParams(lines, model.params);
     appendRawArgs(lines, model.rawArgs);
   }

@@ -33,6 +33,7 @@ export const KNOWN_SAMPLING_ARGS = new Set([
   '--sampler-seq', '--sampling-seq',
   '--ignore-eos',
   '--backend-sampling', '-bs',
+  '--reasoning', '-rea',
 ]);
 
 export function isKnownArg(arg: string): boolean {
