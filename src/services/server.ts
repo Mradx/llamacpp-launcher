@@ -51,7 +51,6 @@ export function buildServerArgs(config: Config, selection: FullSelection): strin
   }
 
   const args = [
-    '--tools', 'all',
     '--host', config.host,
     '--port', String(config.port),
     ...buildModelArgs(selection),
