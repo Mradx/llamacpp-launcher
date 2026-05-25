@@ -1,6 +1,6 @@
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
-import { dirname, join, delimiter } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { dirname, join, delimiter, parse, resolve } from 'node:path';
 import { tmpdir, availableParallelism, homedir } from 'node:os';
 import type { SpawnOptions } from 'node:child_process';
 import { isMac, isWindows } from '../utils/platform.js';
@@ -250,6 +250,118 @@ function refreshProcessPath(): void {
 
 function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+function summarizeCommandError(err: unknown): string | null {
+  const message = err instanceof Error ? err.message : String(err);
+  const lines = message
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line =>
+      !line.startsWith('Exit code ') &&
+      !line.startsWith('+ ') &&
+      !line.includes('CategoryInfo') &&
+      !line.includes('FullyQualifiedErrorId'),
+    );
+
+  return lines[0] || null;
+}
+
+function createBuildDirCleanupError(buildDir: string, err: unknown): Error {
+  const original = summarizeCommandError(err);
+  const lines = [
+    `Failed to clean old llama.cpp build directory: ${buildDir}`,
+    'Windows could not delete it; usually a file or folder is open in another process.',
+    'Close llama-server, CMake/MSBuild/Ninja, Visual Studio, terminals, and File Explorer windows opened inside that folder.',
+    'Find PID: Get-Process cmake,msbuild,ninja,llama-server,llama-cli -ErrorAction SilentlyContinue',
+    'Kill by PID: taskkill /PID <pid> /T /F, then retry Force rebuild.',
+    `Alternative: Resource Monitor > CPU > Associated Handles, search "${buildDir}".`,
+  ];
+
+  if (original) {
+    lines.push(`Original error: ${original}`);
+  }
+
+  return new Error(lines.join('\n'));
+}
+
+function createSourceDirCleanupError(targetDir: string, err: unknown): Error {
+  const original = summarizeCommandError(err);
+  const lines = [
+    `Failed to remove existing llama.cpp folder: ${targetDir}`,
+    'Windows could not delete it; usually a file or folder is open in another process.',
+    'Close llama-server, CMake/MSBuild/Ninja, Visual Studio, terminals, and File Explorer windows opened inside that folder.',
+    'Find PID: Get-Process cmake,msbuild,ninja,llama-server,llama-cli -ErrorAction SilentlyContinue',
+    'Kill by PID: taskkill /PID <pid> /T /F, then retry hard reinstall.',
+    `Alternative: Resource Monitor > CPU > Associated Handles, search "${targetDir}".`,
+  ];
+
+  if (original) {
+    lines.push(`Original error: ${original}`);
+  }
+
+  return new Error(lines.join('\n'));
+}
+
+function assertSafeReinstallTarget(targetDir: string): string {
+  const normalized = resolve(targetDir);
+  const root = parse(normalized).root;
+
+  if (normalized === root || normalized === resolve(homedir())) {
+    throw new Error(`Refusing to hard reinstall unsafe directory: ${normalized}`);
+  }
+
+  if (!existsSync(normalized)) {
+    return normalized;
+  }
+
+  const stat = statSync(normalized);
+  if (!stat.isDirectory()) {
+    throw new Error(`Cannot hard reinstall because this path is not a directory: ${normalized}`);
+  }
+
+  const markers = [
+    join(normalized, '.git'),
+    join(normalized, 'CMakeLists.txt'),
+    join(normalized, 'tools'),
+  ];
+  if (!markers.every(existsSync)) {
+    throw new Error(
+      `Refusing to delete ${normalized}\n` +
+      'Expected an existing llama.cpp git checkout with .git, CMakeLists.txt, and tools/.',
+    );
+  }
+
+  return normalized;
+}
+
+async function removeExistingLlamaCppDir(
+  targetDir: string,
+  onProgress: ProgressCallback,
+): Promise<void> {
+  if (!existsSync(targetDir)) return;
+
+  onProgress({
+    phase: 'clone',
+    message: 'Removing existing llama.cpp folder...',
+    detail: targetDir,
+  });
+
+  try {
+    if (isWindows()) {
+      await spawnWithProgress(
+        'powershell',
+        ['-NoProfile', '-Command', `Remove-Item -LiteralPath ${psQuote(targetDir)} -Recurse -Force -ErrorAction Stop`],
+        {},
+        () => {},
+      );
+    } else {
+      rmSync(targetDir, { recursive: true, force: true });
+    }
+  } catch (err) {
+    throw createSourceDirCleanupError(targetDir, err);
+  }
 }
 
 function spawnWithProgress(
@@ -1261,6 +1373,11 @@ export async function cloneRepo(
   targetDir: string,
   onProgress: ProgressCallback,
 ): Promise<void> {
+  const gitCmd = resolveGitCommand();
+  if (!gitCmd) {
+    throw new Error('Git not found. Install Git or add git.exe to PATH, then reopen the launcher.');
+  }
+
   if (existsSync(join(targetDir, '.git'))) {
     onProgress({ phase: 'clone', message: 'Repository already exists, skipping clone' });
     return;
@@ -1270,7 +1387,7 @@ export async function cloneRepo(
   onProgress({ phase: 'clone', message: 'Cloning llama.cpp repository...' });
 
   await spawnWithProgress(
-    'git',
+    gitCmd,
     ['clone', '--progress', 'https://github.com/ggml-org/llama.cpp.git', targetDir],
     {},
     (line) => {
@@ -1487,7 +1604,7 @@ async function cmakeConfigureWindows(
     try {
       await spawnWithProgress(
         'powershell',
-        ['-NoProfile', '-Command', `Remove-Item -Recurse -Force "${buildDir}"`],
+        ['-NoProfile', '-Command', `Remove-Item -LiteralPath ${psQuote(buildDir)} -Recurse -Force -ErrorAction Stop`],
         {},
         () => {},
       );
@@ -1502,7 +1619,7 @@ async function cmakeConfigureWindows(
     }
 
     if (removeError) {
-      throw removeError;
+      throw createBuildDirCleanupError(buildDir, removeError);
     }
   }
 
@@ -1641,6 +1758,20 @@ export async function runFullInstall(
 
   onProgress({ phase: 'done', message: 'Installation complete!' });
   return targetDir;
+}
+
+export async function hardReinstallLlamaCpp(
+  llamaCppDir: string,
+  prereqs: PrerequisiteStatus,
+  onProgress: ProgressCallback,
+): Promise<void> {
+  const targetDir = assertSafeReinstallTarget(llamaCppDir);
+
+  await removeExistingLlamaCppDir(targetDir, onProgress);
+  await cloneRepo(targetDir, onProgress);
+  await rebuildLlamaCpp(targetDir, prereqs, onProgress);
+
+  onProgress({ phase: 'done', message: 'Hard reinstall complete!' });
 }
 
 // ── Update Functions ──

@@ -5,6 +5,7 @@ import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import { Header } from '../components/Header.js';
 import { KeyHint } from '../components/KeyHint.js';
+import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { validateLlamaCppDir, saveUserConfig } from '../config.js';
 import { useInstaller } from '../hooks/useInstaller.js';
 import { getDataPath, getDataRoot } from '../storage.js';
@@ -64,9 +65,10 @@ const FIELDS = SHOW_CUDA_PDL
 const STATE_FILES = ['config.json', 'params-history.json', 'template-overrides.json', 'model-preferences.json'];
 
 const UPDATE_INDEX = FIELDS.length;
-const SAVE_INDEX = FIELDS.length + 1;
-const DISCARD_INDEX = FIELDS.length + 2;
-const TOTAL_ITEMS = FIELDS.length + 3; // fields + update + save + discard
+const REINSTALL_INDEX = FIELDS.length + 1;
+const SAVE_INDEX = FIELDS.length + 2;
+const DISCARD_INDEX = FIELDS.length + 3;
+const TOTAL_ITEMS = FIELDS.length + 4; // fields + update + reinstall + save + discard
 const TABS_INDEX = -1;
 
 // Render both tabs at the same height. Ink decides between an in-place
@@ -78,10 +80,11 @@ const TABS_INDEX = -1;
 // shared min-height keeps the frame height constant across both tabs and also
 // absorbs the extra status line, so finishing an update never changes the
 // height either.
-const TAB_BODY_HEIGHT = SHOW_CUDA_PDL ? 23 : 21;
+const TAB_BODY_HEIGHT = SHOW_CUDA_PDL ? 24 : 22;
 
 type SettingsTab = 'config' | 'info';
 type StateFileInfo = ReturnType<typeof getStateFileInfo>;
+type InstallAction = 'update' | 'reinstall';
 
 const TABS: Array<{ key: SettingsTab; label: string }> = [
   { key: 'config', label: 'Config' },
@@ -189,8 +192,11 @@ export function SettingsScreen({ currentConfig, llamaCppVersion, onDone }: Setti
   const [pathStatus, setPathStatus] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [stateFiles, setStateFiles] = useState<StateFileInfo[]>([]);
+  const [confirmReinstall, setConfirmReinstall] = useState(false);
+  const [activeInstallAction, setActiveInstallAction] = useState<InstallAction | null>(null);
   const {
     startUpdate,
+    startReinstall,
     progress: installProgress,
     installing: installRunning,
     error: installError,
@@ -238,6 +244,41 @@ export function SettingsScreen({ currentConfig, llamaCppVersion, onDone }: Setti
       delete next[key];
       return next;
     });
+  };
+
+  const runUpdate = (dir: string) => {
+    setActiveInstallAction('update');
+    startUpdate(dir);
+  };
+
+  const runHardReinstall = (dir: string) => {
+    setConfirmReinstall(false);
+    setActiveInstallAction('reinstall');
+    startReinstall(dir);
+  };
+
+  const renderActionFeedback = (action: InstallAction) => {
+    if (activeInstallAction !== action) return null;
+
+    if (installCompleted) {
+      return (
+        <Box marginLeft={3}>
+          <Text color={theme.success}> {truncateText(installProgress?.message || 'Operation complete!', maxLineWidth - 6)}</Text>
+        </Box>
+      );
+    }
+
+    if (installError) {
+      return (
+        <Box marginLeft={3} flexDirection="column">
+          {clampLines(installError, 5, maxLineWidth - 6).map((line, i) => (
+            <Text key={i} color={theme.danger}> {line}</Text>
+          ))}
+        </Box>
+      );
+    }
+
+    return null;
   };
 
   const handleSave = () => {
@@ -292,6 +333,8 @@ export function SettingsScreen({ currentConfig, llamaCppVersion, onDone }: Setti
   };
 
   useInput((input, key) => {
+    if (confirmReinstall) return;
+
     if (editing) {
       if (key.escape) {
         setEditing(false);
@@ -343,7 +386,15 @@ export function SettingsScreen({ currentConfig, llamaCppVersion, onDone }: Setti
       } else if (selectedIndex === UPDATE_INDEX) {
         const dir = String(values.llamaCppDir);
         if (dir) {
-          startUpdate(dir);
+          runUpdate(dir);
+        }
+      } else if (selectedIndex === REINSTALL_INDEX) {
+        const dir = String(values.llamaCppDir);
+        if (dir) {
+          setConfirmReinstall(true);
+        } else {
+          setPathStatus('Path cannot be empty');
+          setSelectedIndex(0);
         }
       } else if (selectedIndex === SAVE_INDEX) {
         handleSave();
@@ -453,32 +504,39 @@ export function SettingsScreen({ currentConfig, llamaCppVersion, onDone }: Setti
               <Text color={selectedIndex === UPDATE_INDEX ? theme.accent : theme.textMuted} bold={selectedIndex === UPDATE_INDEX}>
                 {updateActionLabel}
               </Text>
-              {installRunning && (
+              {installRunning && activeInstallAction === 'update' && (
                 <Box marginLeft={1}>
                   <Text color={theme.accent}><Spinner type="dots" /></Text>
                   <Text dimColor> {truncateText(installProgress?.message || 'Updating...', maxLineWidth - 28)}</Text>
                 </Box>
               )}
             </Box>
-            {updateStatus && (
+            {updateStatus && !installError && !installCompleted && (
               <Box marginLeft={3}>
                 <Text color={updateStatus.color} dimColor={updateStatus.dim}>
                   {truncateText(` ${updateStatus.text}`, maxLineWidth - 6)}
                 </Text>
               </Box>
             )}
-            {installCompleted && (
-              <Box marginLeft={3}>
-                <Text color={theme.success}> {truncateText(installProgress?.message || 'Update complete!', maxLineWidth - 6)}</Text>
-              </Box>
-            )}
-            {installError && (
-              <Box marginLeft={3} flexDirection="column">
-                {clampLines(installError, 4, maxLineWidth - 6).map((line, i) => (
-                  <Text key={i} color={theme.danger}> {line}</Text>
-                ))}
-              </Box>
-            )}
+            {renderActionFeedback('update')}
+          </Box>
+
+          <Box marginTop={1} flexDirection="column">
+            <Box>
+              <Text color={selectedIndex === REINSTALL_INDEX ? theme.marker : undefined}>
+                {selectedIndex === REINSTALL_INDEX ? ' › ' : '   '}
+              </Text>
+              <Text color={selectedIndex === REINSTALL_INDEX ? theme.danger : theme.textMuted} bold={selectedIndex === REINSTALL_INDEX}>
+                Hard reinstall llama.cpp (delete + fresh clone + rebuild)
+              </Text>
+              {installRunning && activeInstallAction === 'reinstall' && (
+                <Box marginLeft={1}>
+                  <Text color={theme.accent}><Spinner type="dots" /></Text>
+                  <Text dimColor> {truncateText(installProgress?.message || 'Reinstalling...', maxLineWidth - 28)}</Text>
+                </Box>
+              )}
+            </Box>
+            {renderActionFeedback('reinstall')}
           </Box>
           <Box marginTop={1}>
             <Text color={selectedIndex === SAVE_INDEX ? theme.marker : undefined}>
@@ -535,6 +593,7 @@ export function SettingsScreen({ currentConfig, llamaCppVersion, onDone }: Setti
         </Box>
       )}
 
+      {!confirmReinstall && (
       <Box marginLeft={2}>
         <KeyHint hints={
           editing
@@ -554,6 +613,22 @@ export function SettingsScreen({ currentConfig, llamaCppVersion, onDone }: Setti
             ]
         } />
       </Box>
+      )}
+
+      {confirmReinstall && (
+        <ConfirmDialog
+          title="Hard reinstall llama.cpp?"
+          lines={[
+            `Target: ${String(values.llamaCppDir)}`,
+            '',
+            'This will delete the entire folder, clone a fresh copy from https://github.com/ggml-org/llama.cpp.git, then rebuild it.',
+            'Any uncommitted changes or extra files inside that folder will be lost.',
+            'Launcher settings and the Hugging Face cache are stored elsewhere.',
+          ]}
+          onConfirm={() => runHardReinstall(String(values.llamaCppDir))}
+          onCancel={() => setConfirmReinstall(false)}
+        />
+      )}
     </Box>
   );
 }

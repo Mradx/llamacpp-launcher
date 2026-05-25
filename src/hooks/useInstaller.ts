@@ -5,6 +5,7 @@ import {
   canAutoInstall,
   runFullInstall,
   pullAndRebuild,
+  hardReinstallLlamaCpp,
   autoInstallPrereq,
   type PrerequisiteStatus,
   type InstallProgress,
@@ -67,6 +68,23 @@ export function useInstaller() {
     }
   }, [prereqs]);
 
+  const startReinstall = useCallback(async (llamaCppDir: string) => {
+    if (!prereqs) return;
+    setInstalling(true);
+    setError(null);
+    setProgress(null);
+    setCompleted(false);
+    try {
+      await hardReinstallLlamaCpp(llamaCppDir, prereqs, setProgress);
+      setSourceChanged(true);
+      setCompleted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInstalling(false);
+    }
+  }, [prereqs]);
+
   const installPrereq = useCallback(async (name: AutoInstallName): Promise<{ ok: boolean; error?: string }> => {
     try {
       const result = await autoInstallPrereq(name, setProgress);
@@ -115,6 +133,7 @@ export function useInstaller() {
     sourceChanged,
     startInstall,
     startUpdate,
+    startReinstall,
     installPrereq,
     installAllMissing,
     redetect: detect,
