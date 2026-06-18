@@ -56,7 +56,7 @@ const GPU_ARCH_MAP: Record<string, number> = {
 };
 
 export const NODE_WEB_UI_REQUIREMENT = '20.19+, 22.13+, or 24+';
-const WEB_UI_ASSETS = ['index.html', 'bundle.js', 'bundle.css', 'loading.html'];
+const WEB_UI_ASSETS = ['index.html'];
 
 // ── Helpers ──
 
@@ -189,7 +189,7 @@ function withPrependedPath(env: NodeJS.ProcessEnv, prefix: string): NodeJS.Proce
 }
 
 function webUiDistDir(llamaCppDir: string): string {
-  return join(llamaCppDir, 'build', 'tools', 'ui', 'dist');
+  return join(llamaCppDir, 'tools', 'ui', 'dist');
 }
 
 function hasWebUiAssets(llamaCppDir: string): boolean {
